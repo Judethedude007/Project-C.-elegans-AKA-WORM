@@ -56,7 +56,7 @@ class GPURenderer:
         self.vbo.write(vertices[:count].astype("f4").tobytes())
         self.vao.render(mode=mode, vertices=count)
 
-    def render(self, worm_strips, trail_strips, food_positions, camera_x, camera_y, zoom):
+    def render(self, worm_strips, trail_strips, food_positions, head_positions, camera_x, camera_y, zoom):
 
         self.ctx.clear(0.05, 0.05, 0.05)
 
@@ -65,8 +65,10 @@ class GPURenderer:
 
         self._render_vertices(food_positions, (0.2, 1.0, 0.2), moderngl.POINTS)
 
-        for worm_strip in worm_strips:
-            self._render_vertices(worm_strip, (0.8, 0.9, 1.0), moderngl.LINE_STRIP)
-
         for trail in trail_strips:
             self._render_vertices(trail, (0.45, 0.6, 0.9), moderngl.LINE_STRIP)
+
+        for worm_strip in worm_strips:
+            self._render_vertices(worm_strip, (1.0, 1.0, 1.0), moderngl.LINE_STRIP)
+
+        self._render_vertices(head_positions, (1.0, 0.25, 0.25), moderngl.POINTS)

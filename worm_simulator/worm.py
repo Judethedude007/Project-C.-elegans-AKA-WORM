@@ -13,6 +13,7 @@ class Worm:
 
         self.angle = random.uniform(0, math.tau)
         self.angular_velocity = 0.0
+        self.time = 0.0
 
         self.energy = 200
         self.age = 0
@@ -40,6 +41,7 @@ class Worm:
 
         self.energy -= 0.02
         self.age += dt
+        self.time += dt
 
         left, right, up, down = self.sense_food(world)
 
@@ -104,10 +106,12 @@ class Worm:
     def body_points(self):
 
         points = []
+        amplitude = 2.0 + min(abs(self.angular_velocity), 1.5) * 2.0
+        wave_rate = self.time * 8.0
 
         for i in range(WORM_SEGMENTS):
             dx = i * 3
-            dy = math.sin(i * 0.5 + self.angle * 2) * 2
+            dy = amplitude * math.sin(i * 0.7 - wave_rate)
             px = self.x - dx * math.cos(self.angle)
             py = self.y - dx * math.sin(self.angle) + dy
             points.append((px, py))

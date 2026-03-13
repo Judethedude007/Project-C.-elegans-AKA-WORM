@@ -40,9 +40,12 @@ running = True
 simulation_speed = 1.0
 world_scale = 0.2
 
-camera_x = 0.0
-camera_y = 0.0
-zoom = 1.0
+avg_x = sum(w.x for w in worms) / len(worms) if worms else 0.0
+avg_y = sum(w.y for w in worms) / len(worms) if worms else 0.0
+
+camera_x = (avg_x / WORLD_SIZE) * world_scale
+camera_y = (avg_y / WORLD_SIZE) * world_scale
+zoom = 50.0
 
 follow_index = 0
 follow_mode = True
@@ -102,9 +105,15 @@ while running:
         target = worms[follow_index % len(worms)]
         camera_x = (target.x / WORLD_SIZE) * world_scale
         camera_y = (target.y / WORLD_SIZE) * world_scale
+    elif worms:
+        avg_x = sum(w.x for w in worms) / len(worms)
+        avg_y = sum(w.y for w in worms) / len(worms)
+        camera_x = (avg_x / WORLD_SIZE) * world_scale
+        camera_y = (avg_y / WORLD_SIZE) * world_scale
 
     worm_strips = []
     trail_strips = []
+    head_positions = []
 
     for worm in worms:
         strip = []
@@ -114,6 +123,7 @@ while running:
             strip.append([x, y])
         if strip:
             worm_strips.append(np.array(strip, dtype="f4"))
+            head_positions.append(strip[0])
 
         if worm.trail:
             strip = []
@@ -133,8 +143,9 @@ while running:
                 food_positions.append([gx, gy])
 
     food_positions = np.array(food_positions, dtype="f4") if food_positions else np.empty((0, 2), dtype="f4")
+    head_positions = np.array(head_positions, dtype="f4") if head_positions else np.empty((0, 2), dtype="f4")
 
-    renderer.render(worm_strips, trail_strips, food_positions, camera_x, camera_y, zoom)
+    renderer.render(worm_strips, trail_strips, food_positions, head_positions, camera_x, camera_y, zoom)
 
     avg_energy = (sum(w.energy for w in worms) / len(worms)) if worms else 0.0
 
