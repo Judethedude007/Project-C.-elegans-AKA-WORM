@@ -126,7 +126,7 @@ while running:
 
     for worm in worms:
         strip = []
-        for p in worm.body:
+        for p in worm.smooth_body():
             x = (p[0] / WORLD_SIZE) * world_scale
             y = (p[1] / WORLD_SIZE) * world_scale
             strip.append([x, y])
@@ -137,9 +137,7 @@ while running:
     food_low = []
     food_mid = []
     food_high = []
-    chem_low = []
-    chem_mid = []
-    chem_high = []
+    chem_buckets = [[] for _ in range(5)]
     pheromone_positions = []
 
     for x in range(WORLD_SIZE):
@@ -155,7 +153,13 @@ while running:
             elif food_value > 0.2 and random.random() < 0.06:
                 food_low.append([gx, gy])
 
-            if world.pheromone[x, y] > 0.15 and random.random() < 0.2:
+    pheromone_grid_size = world.pheromone.shape[0]
+    for px in range(pheromone_grid_size):
+        for py in range(pheromone_grid_size):
+            pv = world.pheromone[px, py]
+            if pv > 0.1 and random.random() < 0.18:
+                gx = (px / pheromone_grid_size) * world_scale
+                gy = (py / pheromone_grid_size) * world_scale
                 pheromone_positions.append([gx, gy])
 
     chem_grid_size = world.chem.shape[0]
@@ -165,12 +169,10 @@ while running:
             gx = (cx / chem_grid_size) * world_scale
             gy = (cy / chem_grid_size) * world_scale
 
-            if chem_value > 60 and random.random() < 0.25:
-                chem_high.append([gx, gy])
-            elif chem_value > 20 and random.random() < 0.15:
-                chem_mid.append([gx, gy])
-            elif chem_value > 5 and random.random() < 0.08:
-                chem_low.append([gx, gy])
+            if chem_value > 0.1 and random.random() < 0.25:
+                intensity = min(chem_value / 10.0, 1.0)
+                bucket = min(int(intensity * len(chem_buckets)), len(chem_buckets) - 1)
+                chem_buckets[bucket].append([gx, gy])
 
     food_layers = [
         (
@@ -187,20 +189,11 @@ while running:
         ),
     ]
 
-    chemical_layers = [
-        (
-            np.array(chem_low, dtype="f4") if chem_low else np.empty((0, 2), dtype="f4"),
-            (0.0, 0.25, 0.0),
-        ),
-        (
-            np.array(chem_mid, dtype="f4") if chem_mid else np.empty((0, 2), dtype="f4"),
-            (0.0, 0.45, 0.0),
-        ),
-        (
-            np.array(chem_high, dtype="f4") if chem_high else np.empty((0, 2), dtype="f4"),
-            (0.0, 0.7, 0.0),
-        ),
-    ]
+    chemical_layers = []
+    for i, bucket in enumerate(chem_buckets, start=1):
+        intensity = i / len(chem_buckets)
+        vertices = np.array(bucket, dtype="f4") if bucket else np.empty((0, 2), dtype="f4")
+        chemical_layers.append((vertices, (0.0, intensity, 0.0)))
 
     pheromone_positions = (
         np.array(pheromone_positions, dtype="f4") if pheromone_positions else np.empty((0, 2), dtype="f4")

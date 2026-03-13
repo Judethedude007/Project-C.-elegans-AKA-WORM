@@ -9,7 +9,7 @@ class World:
     def __init__(self):
 
         self.food = np.random.rand(WORLD_SIZE, WORLD_SIZE).astype(np.float32)
-        self.pheromone = np.zeros((WORLD_SIZE, WORLD_SIZE), dtype=np.float32)
+        self.pheromone = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.chem = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
 
         # Precompute a world->chemical index map for fast downsampling each frame.
@@ -47,19 +47,14 @@ class World:
         )
         self.chem = np.clip(new_chem, 0.0, 1000.0)
 
-        # Keep pheromone trails but let them fade over time.
-        self.pheromone *= 0.995
-
-        neighbors = (
-            np.roll(self.pheromone, 1, axis=0)
-            + np.roll(self.pheromone, -1, axis=0)
-            + np.roll(self.pheromone, 1, axis=1)
-            + np.roll(self.pheromone, -1, axis=1)
-        ) / 4.0
-        self.pheromone = (self.pheromone * 0.9) + (neighbors * 0.1)
+        # Pheromone decays slowly over time.
+        self.pheromone[1:-1, 1:-1] *= 0.98
+        np.clip(self.pheromone, 0.0, 1000.0, out=self.pheromone)
 
     def get_food(self, x, y):
         return self.food[int(x) % WORLD_SIZE, int(y) % WORLD_SIZE]
 
     def get_pheromone(self, x, y):
-        return self.pheromone[int(x) % WORLD_SIZE, int(y) % WORLD_SIZE]
+        gx = int((x % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+        gy = int((y % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+        return self.pheromone[gx % GRID_SIZE, gy % GRID_SIZE]

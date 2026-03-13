@@ -8,8 +8,10 @@ METABOLISM = 0.3
 MOVE_COST = 0.2
 AGE_LIMIT = 5000
 REPRODUCTION_COST = 2000
-SEGMENTS = 20
+SEGMENTS = 24
 SEGMENT_LENGTH = 3
+STIFFNESS = 0.5
+DAMPING = 0.9
 SENSOR_DISTANCE = 6
 
 
@@ -43,6 +45,7 @@ class Worm:
         self.trail = []
         self.segments = SEGMENTS
         self.body = [(self.x, self.y) for _ in range(self.segments)]
+        self.vel = [(0.0, 0.0) for _ in range(self.segments)]
 
         self.brain = Brain()
 
@@ -128,26 +131,48 @@ class Worm:
             self.trail.pop(0)
 
         self.body[0] = (self.x, self.y)
+        self.vel[0] = (0.0, 0.0)
+
+        for i in range(1, self.segments):
+            vx, vy = self.vel[i]
+            cx, cy = self.body[i]
+            self.body[i] = (cx + vx * dt, cy + vy * dt)
 
         for i in range(1, self.segments):
 
             px, py = self.body[i - 1]
             cx, cy = self.body[i]
 
-            dx = px - cx
-            dy = py - cy
+            dx = cx - px
+            dy = cy - py
 
-            dist = (dx * dx + dy * dy) ** 0.5
+            dist = math.sqrt(dx * dx + dy * dy)
 
             if dist == 0:
                 continue
 
-            target = SEGMENT_LENGTH
+            # Clamp maximum stretch to prevent runaway segment explosions.
+            max_dist = SEGMENT_LENGTH * 2
+            if dist > max_dist:
+                scale = max_dist / dist
+                dx *= scale
+                dy *= scale
+                dist = max_dist
 
-            cx += dx / dist * (dist - target)
-            cy += dy / dist * (dist - target)
+            diff = (dist - SEGMENT_LENGTH) / dist
+
+            old_cx, old_cy = cx, cy
+
+            cx -= dx * diff * STIFFNESS
+            cy -= dy * diff * STIFFNESS
+
+            vx, vy = self.vel[i]
+            inv_dt = 1.0 / max(dt, 1e-6)
+            vx = (vx + (cx - old_cx) * inv_dt) * DAMPING
+            vy = (vy + (cy - old_cy) * inv_dt) * DAMPING
 
             self.body[i] = (cx, cy)
+            self.vel[i] = (vx, vy)
 
         self.wave_phase += dt * 4
         for i in range(self.segments):
@@ -160,6 +185,15 @@ class Worm:
             )
 
         self.body[0] = (self.x, self.y)
+
+        for i, (bx, by) in enumerate(self.body):
+            if abs(bx) > WORLD_SIZE * 5 or abs(by) > WORLD_SIZE * 5:
+                if i == 0:
+                    self.body[i] = (self.x, self.y)
+                    self.vel[i] = (0.0, 0.0)
+                else:
+                    self.body[i] = self.body[i - 1]
+                    self.vel[i] = (0.0, 0.0)
 
         x = int(self.x) % WORLD_SIZE
         y = int(self.y) % WORLD_SIZE
@@ -174,7 +208,10 @@ class Worm:
 
             self.energy += eat * 40
 
-        world.pheromone[x, y] += 1
+        gx = int((self.x % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+        gy = int((self.y % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+        if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
+            world.pheromone[gx, gy] += 0.5
 
         if self.energy > REPRODUCTION_COST and random.random() < 0.002:
             self.energy *= 0.5
@@ -193,13 +230,16 @@ class Worm:
 
         return None
 
-    def body_points(self):
+    def smooth_body(self):
 
         smooth_points = []
 
         for i in range(len(self.body) - 1):
             x1, y1 = self.body[i]
             x2, y2 = self.body[i + 1]
+
+            if abs(x1 - x2) > 50 or abs(y1 - y2) > 50:
+                continue
 
             smooth_points.append((x1, y1))
             smooth_points.append(((x1 + x2) / 2, (y1 + y2) / 2))
@@ -208,3 +248,6 @@ class Worm:
             smooth_points.append(self.body[-1])
 
         return smooth_points
+
+    def body_points(self):
+        return self.smooth_body()

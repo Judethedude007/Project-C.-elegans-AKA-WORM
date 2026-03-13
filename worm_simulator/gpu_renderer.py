@@ -1,5 +1,6 @@
 import numpy as np
 import moderngl
+from config import WORLD_SIZE
 
 
 class GPURenderer:
@@ -50,10 +51,21 @@ class GPURenderer:
         if vertices.size == 0:
             return
 
-        count = min(len(vertices), self.max_vertices)
+        safe_limit = WORLD_SIZE * 2
+        finite_mask = np.isfinite(vertices).all(axis=1)
+        bounds_mask = (
+            (np.abs(vertices[:, 0]) <= safe_limit)
+            & (np.abs(vertices[:, 1]) <= safe_limit)
+        )
+        safe_vertices = vertices[finite_mask & bounds_mask]
+
+        if safe_vertices.size == 0:
+            return
+
+        count = min(len(safe_vertices), self.max_vertices)
         self.program["color"].value = color
         self.vbo.orphan()
-        self.vbo.write(vertices[:count].astype("f4").tobytes())
+        self.vbo.write(safe_vertices[:count].astype("f4").tobytes())
         self.vao.render(mode=mode, vertices=count)
 
     def render(
