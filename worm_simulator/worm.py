@@ -39,7 +39,7 @@ class Worm:
     def update(self, world, dt=1 / 60):
 
         if self.dead:
-            return
+            return None
 
         self.energy -= 0.02
         self.age += dt
@@ -82,7 +82,7 @@ class Worm:
             self.trail.clear()
 
         self.trail.append((self.x, self.y))
-        if len(self.trail) > 50:
+        if len(self.trail) > 100:
             self.trail.pop(0)
 
         self.body[0] = (self.x, self.y)
@@ -120,11 +120,22 @@ class Worm:
 
         world.pheromone[x, y] += 1
 
+        if self.energy > 4000:
+            self.energy *= 0.5
+            baby = Worm(
+                (self.x + random.uniform(-5, 5)) % WORLD_SIZE,
+                (self.y + random.uniform(-5, 5)) % WORLD_SIZE,
+            )
+            baby.energy = self.energy
+            return baby
+
         if self.energy <= 0:
             self.dead = True
 
         if self.age > 1500:
             self.dead = True
+
+        return None
 
     def body_points(self):
 

@@ -16,6 +16,10 @@ from worm import Worm
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_SIZE
 from gpu_renderer import GPURenderer
 
+ZOOM_MIN = max(0.2, 2.0 / WORLD_SIZE)
+ZOOM_MAX = 100.0
+CAMERA_STEP = 12.0
+
 pygame.init()
 
 screen = pygame.display.set_mode(
@@ -38,14 +42,14 @@ clock = pygame.time.Clock()
 
 running = True
 simulation_speed = 1.0
-world_scale = 0.2
+world_scale = 1.0
 
 avg_x = sum(w.x for w in worms) / len(worms) if worms else 0.0
 avg_y = sum(w.y for w in worms) / len(worms) if worms else 0.0
 
-camera_x = (avg_x / WORLD_SIZE) * world_scale
-camera_y = (avg_y / WORLD_SIZE) * world_scale
-zoom = 50.0
+camera_x = avg_x
+camera_y = avg_y
+zoom = 10.0
 
 follow_index = 0
 follow_mode = True
@@ -76,18 +80,20 @@ while running:
                 simulation_speed = 5.0
 
             if event.key == pygame.K_w:
-                camera_y += 0.1
+                camera_y += CAMERA_STEP / max(zoom, 0.001)
             if event.key == pygame.K_s:
-                camera_y -= 0.1
+                camera_y -= CAMERA_STEP / max(zoom, 0.001)
             if event.key == pygame.K_a:
-                camera_x -= 0.1
+                camera_x -= CAMERA_STEP / max(zoom, 0.001)
             if event.key == pygame.K_d:
-                camera_x += 0.1
+                camera_x += CAMERA_STEP / max(zoom, 0.001)
 
             if event.key == pygame.K_q:
                 zoom *= 1.1
             if event.key == pygame.K_e:
                 zoom /= 1.1
+
+            zoom = max(ZOOM_MIN, min(zoom, ZOOM_MAX))
 
             if event.key == pygame.K_f:
                 follow_mode = not follow_mode
@@ -96,20 +102,24 @@ while running:
 
     world.update(dt)
 
+    new_worms = []
+
     for worm in worms:
-        worm.update(world, dt)
+        baby = worm.update(world, dt)
+        if baby is not None:
+            new_worms.append(baby)
+
+    worms.extend(new_worms)
 
     worms = [w for w in worms if not w.dead]
 
     if follow_mode and worms:
         target = worms[follow_index % len(worms)]
-        camera_x = (target.x / WORLD_SIZE) * world_scale
-        camera_y = (target.y / WORLD_SIZE) * world_scale
-    elif worms:
-        avg_x = sum(w.x for w in worms) / len(worms)
-        avg_y = sum(w.y for w in worms) / len(worms)
-        camera_x = (avg_x / WORLD_SIZE) * world_scale
-        camera_y = (avg_y / WORLD_SIZE) * world_scale
+        camera_x = target.x
+        camera_y = target.y
+
+    camera_x = max(0.0, min(camera_x, float(WORLD_SIZE)))
+    camera_y = max(0.0, min(camera_y, float(WORLD_SIZE)))
 
     worm_strips = []
     head_positions = []
@@ -165,7 +175,15 @@ while running:
     )
     head_positions = np.array(head_positions, dtype="f4") if head_positions else np.empty((0, 2), dtype="f4")
 
-    renderer.render(worm_strips, pheromone_positions, food_layers, head_positions, camera_x, camera_y, zoom)
+    renderer.render(
+        worm_strips,
+        pheromone_positions,
+        food_layers,
+        head_positions,
+        (camera_x / WORLD_SIZE) * world_scale,
+        (camera_y / WORLD_SIZE) * world_scale,
+        zoom,
+    )
 
     avg_energy = (sum(w.energy for w in worms) / len(worms)) if worms else 0.0
 
