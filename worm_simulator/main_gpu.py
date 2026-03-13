@@ -264,6 +264,33 @@ while running:
         zoom,
     )
 
+    if view_mode == 0:
+        camera_norm_x = (camera_x / WORLD_SIZE) * world_scale
+        camera_norm_y = (camera_y / WORLD_SIZE) * world_scale
+        for worm in worms:
+            if not worm.body:
+                continue
+
+            hx, hy = worm.body[0]
+            head_x = (hx / WORLD_SIZE) * world_scale
+            head_y = (hy / WORLD_SIZE) * world_scale
+
+            clip_x = (head_x - camera_norm_x) * zoom
+            clip_y = (head_y - camera_norm_y) * zoom
+
+            hx = (clip_x * 0.5 + 0.5) * SCREEN_WIDTH
+            hy = (0.5 - clip_y * 0.5) * SCREEN_HEIGHT
+            radius = max(3, int(4 * zoom))
+
+            if 0 <= hx < SCREEN_WIDTH and 0 <= hy < SCREEN_HEIGHT:
+                # draw worm head
+                pygame.draw.circle(
+                    screen,
+                    (255, 120, 120),
+                    (int(hx), int(hy)),
+                    radius,
+                )
+
     avg_energy = (sum(w.energy for w in worms) / len(worms)) if worms else 0.0
     total_food = float(np.sum(world.food))
     total_pheromone = float(np.sum(world.pheromone))
