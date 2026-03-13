@@ -4,7 +4,7 @@ import pygame
 from world import World
 from worm import Worm
 from camera import Camera
-from config import SCREEN_WIDTH, SCREEN_HEIGHT, CELL_SIZE, WORLD_SIZE
+from config import SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_SIZE
 from gpu_renderer import GPURenderer
 
 pygame.init()
@@ -19,8 +19,8 @@ world = World()
 worms = [Worm(random.uniform(0, WORLD_SIZE - 1), random.uniform(0, WORLD_SIZE - 1)) for _ in range(10)]
 
 camera = Camera()
-camera.x = (WORLD_SIZE * CELL_SIZE) / 2 - SCREEN_WIDTH / 2
-camera.y = (WORLD_SIZE * CELL_SIZE) / 2 - SCREEN_HEIGHT / 2
+camera.x = WORLD_SIZE / 2 - SCREEN_WIDTH / 2
+camera.y = WORLD_SIZE / 2 - SCREEN_HEIGHT / 2
 camera.zoom = 1.0
 
 renderer = GPURenderer(SCREEN_WIDTH, SCREEN_HEIGHT)
@@ -45,11 +45,16 @@ while running:
 
     worms = [w for w in worms if not w.dead]
 
-    # CPU simulation produces world-space worm positions.
-    worm_positions = np.array([[w.x * CELL_SIZE, w.y * CELL_SIZE] for w in worms], dtype=np.float32)
+    # CPU simulation produces segment positions for all worms.
+    positions = []
+    for worm in worms:
+        for p in worm.body_points():
+            positions.append([p[0], p[1]])
+
+    worm_positions = np.array(positions, dtype="f4") if positions else np.empty((0, 2), dtype="f4")
 
     # GPU handles rendering only.
-    renderer.render(worm_positions, camera.x, camera.y, camera.zoom)
+    renderer.render(worm_positions, WORLD_SIZE)
 
     pygame.display.flip()
     clock.tick(60)

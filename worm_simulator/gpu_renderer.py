@@ -16,62 +16,40 @@ class GPURenderer:
             vertex_shader="""
                 #version 330
                 in vec2 in_pos;
-                in vec3 in_color;
-                out vec3 v_color;
 
                 void main() {
                     gl_Position = vec4(in_pos, 0.0, 1.0);
-                    gl_PointSize = 6.0;
-                    v_color = in_color;
+                    gl_PointSize = 8.0;
                 }
             """,
             fragment_shader="""
                 #version 330
-                in vec3 v_color;
                 out vec4 fragColor;
 
                 void main() {
-                    vec2 c = gl_PointCoord - vec2(0.5);
-                    if (dot(c, c) > 0.25) {
-                        discard;
-                    }
-                    fragColor = vec4(v_color, 1.0);
+                    fragColor = vec4(1.0, 0.3, 0.3, 1.0);
                 }
             """,
         )
 
-        self.max_points = 20000
-        self.vbo = self.ctx.buffer(reserve=self.max_points * 5 * 4)
-        self.vao = self.ctx.vertex_array(
-            self.program,
-            [
-                (self.vbo, "2f 3f", "in_pos", "in_color"),
-            ],
-        )
+        self.max_points = 120000
+        self.vbo = self.ctx.buffer(reserve=self.max_points * 2 * 4)
+        self.vao = self.ctx.simple_vertex_array(self.program, self.vbo, "in_pos")
 
-    def _world_to_ndc(self, world_positions, camera_x, camera_y, zoom):
-        if len(world_positions) == 0:
-            return np.empty((0, 2), dtype=np.float32)
+    def render(self, worm_positions, world_size):
 
-        sx = (world_positions[:, 0] - camera_x) * zoom
-        sy = (world_positions[:, 1] - camera_y) * zoom
-
-        ndc_x = (sx / (self.width * 0.5)) - 1.0
-        ndc_y = 1.0 - (sy / (self.height * 0.5))
-
-        return np.column_stack((ndc_x, ndc_y)).astype(np.float32)
-
-    def render(self, worm_positions, camera_x, camera_y, zoom):
-        self.ctx.clear(0.18, 0.14, 0.08, 1.0)
+        self.ctx.clear(0.05, 0.05, 0.05)
 
         if worm_positions.size == 0:
             return
 
-        ndc = self._world_to_ndc(worm_positions, camera_x, camera_y, zoom)
+        points = np.array(worm_positions, dtype="f4", copy=True)
 
-        colors = np.tile(np.array([[1.0, 0.55, 0.55]], dtype=np.float32), (ndc.shape[0], 1))
-        data = np.hstack((ndc, colors)).astype(np.float32)
+        # OpenGL uses normalized coordinates in range [-1, 1].
+        points[:, 0] = (points[:, 0] / world_size) * 2.0 - 1.0
+        points[:, 1] = (points[:, 1] / world_size) * 2.0 - 1.0
 
-        points = min(len(data), self.max_points)
-        self.vbo.write(data[:points].tobytes())
-        self.vao.render(mode=moderngl.POINTS, vertices=points)
+        count = min(len(points), self.max_points)
+        self.vbo.write(points[:count].tobytes())
+
+        self.vao.render(moderngl.POINTS, vertices=count)
