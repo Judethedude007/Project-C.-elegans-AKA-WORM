@@ -17,6 +17,7 @@ class Worm:
         self.energy = 200
         self.age = 0
         self.dead = False
+        self.trail = []
 
         self.brain = Brain()
 
@@ -69,6 +70,10 @@ class Worm:
         speed = 1.5
         self.x = (self.x + math.cos(self.angle) * speed) % WORLD_SIZE
         self.y = (self.y + math.sin(self.angle) * speed) % WORLD_SIZE
+
+        self.trail.append((self.x, self.y))
+        if len(self.trail) > 50:
+            self.trail.pop(0)
 
         x = int(self.x) % WORLD_SIZE
         y = int(self.y) % WORLD_SIZE
