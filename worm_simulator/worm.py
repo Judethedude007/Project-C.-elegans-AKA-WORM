@@ -65,6 +65,8 @@ class Worm:
         self.segments = SEGMENTS
         self.body = [(self.x, self.y) for _ in range(self.segments)]
         self.vel = [(0.0, 0.0) for _ in range(self.segments)]
+        self.muscle_left = [0.0] * SEGMENTS
+        self.muscle_right = [0.0] * SEGMENTS
 
         self.brain = Brain()
 
@@ -105,6 +107,16 @@ class Worm:
         left_val = sample_chem(world, *left_sensor)
         right_val = sample_chem(world, *right_sensor)
 
+        eating = False
+        feed_gx = int(self.x / WORLD_SIZE * GRID_SIZE)
+        feed_gy = int(self.y / WORLD_SIZE * GRID_SIZE)
+        food_here = 0.0
+        if 0 <= feed_gx < GRID_SIZE and 0 <= feed_gy < GRID_SIZE:
+            food_here = float(world.food[feed_gx, feed_gy])
+
+        if food_here > 0:
+            eating = True
+
         inputs = [food_x, food_y, 0, 0, 0, 0, 0, 0, 0, 0]
 
         for i in range(len(inputs)):
@@ -127,14 +139,15 @@ class Worm:
         self.angle += self.angular_velocity
 
         turn_strength = self.genes["turn_sensitivity"]
-        self.angle += (left_val - right_val) * turn_strength
+        diff = (right_val - left_val) / 100.0
+        turn_signal = diff * turn_strength
+        turn_signal = max(-0.15, min(0.15, turn_signal))
+        if eating:
+            self.angle += turn_signal * 0.1
+        else:
+            self.angle += turn_signal
 
-        self.angle += random.uniform(-0.002, 0.002)
-
-        center_val = sample_chem(world, self.x, self.y)
-        self.speed = 1.2 - center_val * 0.6
-        self.speed *= self.genes["speed"]
-        self.speed = max(0.2, self.speed)
+        self.angle += random.uniform(-0.02, 0.02)
 
         margin = 40
         if self.x < margin:
@@ -152,29 +165,10 @@ class Worm:
         self.energy -= self.genes["metabolism"] * dt
         self.age += dt
 
-        self.vx = math.cos(self.angle) * self.speed
-        self.vy = math.sin(self.angle) * self.speed
-
-        self.x += self.vx * dt
-        self.y += self.vy * dt
-
-        self.x = max(0.0, min(self.x, WORLD_SIZE - 1e-6))
-        self.y = max(0.0, min(self.y, WORLD_SIZE - 1e-6))
-
-        dx = self.x - self.trail[-1][0] if self.trail else 0
-        dy = self.y - self.trail[-1][1] if self.trail else 0
-
-        if dx * dx + dy * dy > 100:
-            self.trail.clear()
-
-        self.trail.append((self.x, self.y))
-        if len(self.trail) > 100:
-            self.trail.pop(0)
-
         self.body[0] = (self.x, self.y)
         self.vel[0] = (0.0, 0.0)
 
-        for i in range(1, SEGMENTS):
+        for i in range(2, SEGMENTS):
 
             px, py = self.body[i - 1]
             cx, cy = self.body[i]
@@ -206,14 +200,58 @@ class Worm:
             self.body[i - 1] = (px, py)
             self.body[i] = (cx, cy)
 
-        amplitude = 2.0
         phase = self.time * 4
-        for i in range(self.segments):
-            x, y = self.body[i]
-            offset = math.sin(i * 0.6 - phase) * amplitude
+        for i in range(SEGMENTS):
+
+            activation = math.sin(phase - i * 0.5)
+
+            self.muscle_left[i] = max(0, activation)
+            self.muscle_right[i] = max(0, -activation)
+
+        wave_strength = 0
+
+        for i in range(SEGMENTS):
+            wave_strength += abs(self.muscle_left[i] - self.muscle_right[i])
+
+        wave_strength /= SEGMENTS
+
+        speed = self.genes["speed"] * 1.4
+
+        if eating:
+            speed *= 0.2
+
+        forward = speed * (0.5 + wave_strength)
+
+        self.x += math.cos(self.angle) * forward * dt
+        self.y += math.sin(self.angle) * forward * dt
+
+        self.x = max(0.0, min(self.x, WORLD_SIZE - 1e-6))
+        self.y = max(0.0, min(self.y, WORLD_SIZE - 1e-6))
+
+        dx = self.x - self.trail[-1][0] if self.trail else 0
+        dy = self.y - self.trail[-1][1] if self.trail else 0
+
+        if dx * dx + dy * dy > 100:
+            self.trail.clear()
+
+        self.trail.append((self.x, self.y))
+        if len(self.trail) > 100:
+            self.trail.pop(0)
+
+        base_angle = self.angle
+        x, y = self.x, self.y
+
+        self.body[0] = (self.x, self.y)
+
+        for i in range(1, SEGMENTS):
+            bend = max(-1, min(1, self.muscle_left[i] - self.muscle_right[i]))
+            segment_angle = base_angle + bend * 0.25
+
+            x -= math.cos(segment_angle) * SEGMENT_LENGTH
+            y -= math.sin(segment_angle) * SEGMENT_LENGTH
             self.body[i] = (
-                x + offset * self.direction_y,
-                y - offset * self.direction_x,
+                x,
+                y,
             )
 
         self.body[0] = (self.x, self.y)
@@ -247,6 +285,7 @@ class Worm:
             world.food[gx, gy] -= eaten
 
             self.energy += eaten * 20
+            eating = True
 
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
             world.pheromone[gx, gy] += 0.5
