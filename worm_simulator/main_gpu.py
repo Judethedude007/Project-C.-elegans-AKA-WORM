@@ -126,7 +126,7 @@ while running:
 
     for worm in worms:
         strip = []
-        for p in worm.body_points():
+        for p in worm.body:
             x = (p[0] / WORLD_SIZE) * world_scale
             y = (p[1] / WORLD_SIZE) * world_scale
             strip.append([x, y])

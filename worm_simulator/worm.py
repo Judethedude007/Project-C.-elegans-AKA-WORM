@@ -3,6 +3,13 @@ import random
 from brain import Brain
 from config import WORLD_SIZE
 
+METABOLISM = 0.3
+MOVE_COST = 0.2
+AGE_LIMIT = 5000
+REPRODUCTION_COST = 2000
+SEGMENTS = 20
+SEGMENT_LENGTH = 3
+
 
 class Worm:
 
@@ -14,12 +21,15 @@ class Worm:
         self.angle = random.uniform(0, math.tau)
         self.angular_velocity = 0.0
         self.time = 0.0
+        self.wave_phase = 0.0
+        self.direction_x = math.cos(self.angle)
+        self.direction_y = math.sin(self.angle)
 
         self.energy = 200
         self.age = 0
         self.dead = False
         self.trail = []
-        self.segments = 20
+        self.segments = SEGMENTS
         self.body = [(self.x, self.y) for _ in range(self.segments)]
 
         self.brain = Brain()
@@ -41,8 +51,6 @@ class Worm:
         if self.dead:
             return None
 
-        self.energy -= 0.02
-        self.age += dt
         self.time += dt
 
         left, right, up, down = self.sense_food(world)
@@ -71,6 +79,13 @@ class Worm:
 
         self.angle += self.angular_velocity
 
+        self.direction_x = math.cos(self.angle)
+        self.direction_y = math.sin(self.angle)
+
+        self.energy -= METABOLISM
+        self.energy -= abs(self.angular_velocity) * MOVE_COST
+        self.age += dt
+
         speed = 1.5
         self.x = (self.x + math.cos(self.angle) * speed) % WORLD_SIZE
         self.y = (self.y + math.sin(self.angle) * speed) % WORLD_SIZE
@@ -97,13 +112,27 @@ class Worm:
 
             dist = (dx * dx + dy * dy) ** 0.5
 
-            target = 4
+            if dist == 0:
+                continue
 
-            if dist > 0:
-                cx += dx / dist * (dist - target)
-                cy += dy / dist * (dist - target)
+            target = SEGMENT_LENGTH
+
+            cx += dx / dist * (dist - target)
+            cy += dy / dist * (dist - target)
 
             self.body[i] = (cx, cy)
+
+        self.wave_phase += dt * 4
+        for i in range(self.segments):
+            x, y = self.body[i]
+            wave = math.sin(self.wave_phase - i * 0.5)
+            offset = wave * 2
+            self.body[i] = (
+                x + offset * self.direction_y,
+                y - offset * self.direction_x,
+            )
+
+        self.body[0] = (self.x, self.y)
 
         x = int(self.x) % WORLD_SIZE
         y = int(self.y) % WORLD_SIZE
@@ -120,7 +149,7 @@ class Worm:
 
         world.pheromone[x, y] += 1
 
-        if self.energy > 4000:
+        if self.energy > REPRODUCTION_COST and random.random() < 0.002:
             self.energy *= 0.5
             baby = Worm(
                 (self.x + random.uniform(-5, 5)) % WORLD_SIZE,
@@ -132,7 +161,7 @@ class Worm:
         if self.energy <= 0:
             self.dead = True
 
-        if self.age > 1500:
+        if self.age > AGE_LIMIT:
             self.dead = True
 
         return None
