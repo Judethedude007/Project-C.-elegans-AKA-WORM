@@ -10,10 +10,8 @@ from connectome import load_connectome, default_connectome_graph, graph_from_con
 from config import (
     SCREEN_WIDTH,
     SCREEN_HEIGHT,
+    CELL_SIZE,
     ZOOM_SPEED,
-    FOLLOW_LERP,
-    SIMULATION_FIXED_DT,
-    NUM_WORMS,
     MAX_WORMS,
     MATING_DISTANCE,
     WORLD_SIZE,
@@ -40,18 +38,15 @@ connectome_setup = {
     "motor_map": motor_map,
 }
 
-worms = [
-    Worm(
-        random.uniform(0, WORLD_SIZE - 1),
-        random.uniform(0, WORLD_SIZE - 1),
-        connectome_setup,
-    )
-    for _ in range(NUM_WORMS)
-]
+worms = []
+for _ in range(10):
+    random_x = random.uniform(0, WORLD_SIZE - 1)
+    random_y = random.uniform(0, WORLD_SIZE - 1)
+    worms.append(Worm(random_x, random_y, connectome_setup))
 
 camera = Camera()
-camera.x = 1000 - SCREEN_WIDTH / 2
-camera.y = 1000 - SCREEN_HEIGHT / 2
+camera.x = (WORLD_SIZE * CELL_SIZE) / 2 - SCREEN_WIDTH / 2
+camera.y = (WORLD_SIZE * CELL_SIZE) / 2 - SCREEN_HEIGHT / 2
 camera_target_x = camera.x
 camera_target_y = camera.y
 
@@ -62,24 +57,11 @@ running = True
 simulation_speed = 1
 follow = True
 paused = False
-simulation_time = 0.0
 target_index = 0
-
-speed_by_key = {
-    pygame.K_1: 1,
-    pygame.K_2: 3,
-    pygame.K_3: 5,
-    pygame.K_4: 10,
-    pygame.K_5: 20,
-}
 
 target_worm = worms[target_index] if worms else None
 
 while running:
-
-    dt = clock.get_time() / 1000.0
-    if dt <= 0:
-        dt = SIMULATION_FIXED_DT
 
     for event in pygame.event.get():
 
@@ -103,12 +85,18 @@ while running:
                 target_worm = worms[target_index]
             if event.key == pygame.K_SPACE:
                 paused = not paused
-            if event.key in speed_by_key:
-                simulation_speed = speed_by_key[event.key]
+            if event.key == pygame.K_1:
+                simulation_speed = 1
+            if event.key == pygame.K_2:
+                simulation_speed = 3
+            if event.key == pygame.K_3:
+                simulation_speed = 5
+            if event.key == pygame.K_4:
+                simulation_speed = 10
 
     keys = pygame.key.get_pressed()
 
-    camera_speed = (12 / max(camera.zoom, 0.2)) * dt * 60.0
+    camera_speed = 14 / max(camera.zoom, 0.2)
     if not follow:
         if keys[pygame.K_LEFT]:
             camera_target_x -= camera_speed
@@ -120,13 +108,11 @@ while running:
             camera_target_y += camera_speed
 
     if not paused:
-        simulation_time += dt * simulation_speed
-
-        while simulation_time >= SIMULATION_FIXED_DT:
-            world.update(SIMULATION_FIXED_DT)
+        for _ in range(simulation_speed):
+            world.update()
 
             for w in worms:
-                w.update(world, SIMULATION_FIXED_DT)
+                w.update(world)
 
             worms = [w for w in worms if w.energy > 0]
 
@@ -168,21 +154,19 @@ while running:
 
             worms.extend(newborns)
 
-            simulation_time -= SIMULATION_FIXED_DT
-
     if worms and follow:
         target_index %= len(worms)
         if target_worm not in worms:
             target_worm = worms[target_index]
-        target_x = target_worm.x - SCREEN_WIDTH / 2
-        target_y = target_worm.y - SCREEN_HEIGHT / 2
-        camera.x += (target_x - camera.x) * FOLLOW_LERP
-        camera.y += (target_y - camera.y) * FOLLOW_LERP
+        target_x = target_worm.x * CELL_SIZE - SCREEN_WIDTH / 2
+        target_y = target_worm.y * CELL_SIZE - SCREEN_HEIGHT / 2
+        camera.x += (target_x - camera.x) * 0.15
+        camera.y += (target_y - camera.y) * 0.15
     elif not worms:
         target_worm = None
     else:
-        camera.x += (camera_target_x - camera.x) * 0.25
-        camera.y += (camera_target_y - camera.y) * 0.25
+        camera.x += (camera_target_x - camera.x) * 0.15
+        camera.y += (camera_target_y - camera.y) * 0.15
 
     screen.fill((45, 35, 20))
 

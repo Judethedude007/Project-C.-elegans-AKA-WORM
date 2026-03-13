@@ -49,7 +49,7 @@ class World:
         self.obstacles = obstacle_smear > 1.5
         self.food[self.obstacles] = 0
 
-    def update(self, dt):
+    def update(self, dt=1 / 60):
 
         scale = dt * 60.0
 

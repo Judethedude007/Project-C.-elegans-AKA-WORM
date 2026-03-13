@@ -62,7 +62,7 @@ class Worm:
             "pheromone": float(pheromone),
         }
 
-    def update(self, world, dt):
+    def update(self, world, dt=1 / 60):
 
         if self.energy <= 0:
             return

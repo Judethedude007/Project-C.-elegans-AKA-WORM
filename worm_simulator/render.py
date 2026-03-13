@@ -1,39 +1,44 @@
 import pygame
-from config import WORLD_SIZE
+from config import WORLD_SIZE, CELL_SIZE, SCREEN_WIDTH, SCREEN_HEIGHT
 
 
 def draw_world(screen, camera, world):
-    width, height = screen.get_size()
-    sample_step = 6
+    zoom = max(camera.zoom, 0.2)
+    view_cell_size = CELL_SIZE * zoom
 
-    for sx in range(0, width, sample_step):
-        wx = int(camera.x + (sx / max(camera.zoom, 0.001))) % WORLD_SIZE
+    start_x = int(camera.x // CELL_SIZE)
+    start_y = int(camera.y // CELL_SIZE)
 
-        for sy in range(0, height, sample_step):
-            wy = int(camera.y + (sy / max(camera.zoom, 0.001))) % WORLD_SIZE
+    end_x = start_x + int(SCREEN_WIDTH // max(view_cell_size, 1)) + 2
+    end_y = start_y + int(SCREEN_HEIGHT // max(view_cell_size, 1)) + 2
 
-            food = world.food[wx, wy]
-            pheromone = world.pheromone[wx, wy]
-            temperature = world.temperature[wx, wy]
-            obstacle = world.obstacles[wx, wy]
+    for x in range(start_x, end_x):
+        for y in range(start_y, end_y):
 
-            if obstacle:
-                pygame.draw.rect(screen, (28, 20, 12), (sx, sy, sample_step, sample_step))
-                continue
+            if 0 <= x < WORLD_SIZE and 0 <= y < WORLD_SIZE:
 
-            if food > 0.2:
-                intensity = int(food * 180)
-                color = (40, min(255, 120 + intensity), 40)
-                pygame.draw.rect(screen, color, (sx, sy, sample_step, sample_step))
+                food = world.food[x, y]
+                pher = world.pheromone[x, y]
 
-            if pheromone > 0.01:
-                color = (40, 100, 180)
-                pygame.draw.rect(screen, color, (sx, sy, sample_step, sample_step))
+                sx = (x * CELL_SIZE - camera.x) * zoom
+                sy = (y * CELL_SIZE - camera.y) * zoom
 
-            if temperature > 0.65:
-                pygame.draw.rect(screen, (70, 40, 20), (sx, sy, sample_step, sample_step), 1)
-            elif temperature < 0.35:
-                pygame.draw.rect(screen, (20, 40, 70), (sx, sy, sample_step, sample_step), 1)
+                if food > 0.1:
+
+                    color = (40, min(255, 100 + int(food * 150)), 40)
+
+                    pygame.draw.rect(
+                        screen,
+                        color,
+                        (sx, sy, view_cell_size, view_cell_size),
+                    )
+
+                if pher > 0.01:
+                    pygame.draw.rect(
+                        screen,
+                        (40, 100, 180),
+                        (sx, sy, view_cell_size, view_cell_size),
+                    )
 
 
 def draw_worm(screen, camera, worm):
@@ -42,10 +47,10 @@ def draw_worm(screen, camera, worm):
 
     for i, p in enumerate(points):
 
-        x, y = camera.apply(p[0], p[1])
+        x, y = camera.apply(p[0] * CELL_SIZE, p[1] * CELL_SIZE)
 
-        radius = max(1, 6 - i // 2)
-        pygame.draw.circle(screen, (255, 150, 150), (int(x), int(y)), radius)
+        radius = max(1, 5 - i // 2)
+        pygame.draw.circle(screen, (255, 140, 140), (int(x), int(y)), radius)
 
-    hx, hy = camera.apply(points[0][0], points[0][1])
+    hx, hy = camera.apply(points[0][0] * CELL_SIZE, points[0][1] * CELL_SIZE)
     pygame.draw.circle(screen, (255, 255, 255), (int(hx), int(hy)), 3)
