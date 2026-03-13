@@ -12,7 +12,7 @@ except Exception:
     IMGUI_AVAILABLE = False
 
 from world import World
-from worm import Worm
+from worm import Worm, SEGMENTS
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_SIZE
 from gpu_renderer import GPURenderer
 
@@ -108,6 +108,16 @@ while running:
         baby = worm.update(world, dt)
         if baby is not None:
             new_worms.append(baby)
+
+        if len(worm.body) == 0:
+            continue
+
+        hx, hy = worm.body[0]
+        if (not np.isfinite(hx)) or (not np.isfinite(hy)) or abs(hx) > WORLD_SIZE * 3 or abs(hy) > WORLD_SIZE * 3:
+            worm.x = WORLD_SIZE / 2
+            worm.y = WORLD_SIZE / 2
+            worm.body = [(worm.x, worm.y) for _ in range(SEGMENTS)]
+            worm.vel = [(0.0, 0.0) for _ in range(SEGMENTS)]
 
     worms.extend(new_worms)
 

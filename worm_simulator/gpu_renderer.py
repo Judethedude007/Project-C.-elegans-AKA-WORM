@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import moderngl
 from config import WORLD_SIZE
@@ -52,12 +53,19 @@ class GPURenderer:
             return
 
         safe_limit = WORLD_SIZE * 2
-        finite_mask = np.isfinite(vertices).all(axis=1)
-        bounds_mask = (
-            (np.abs(vertices[:, 0]) <= safe_limit)
-            & (np.abs(vertices[:, 1]) <= safe_limit)
-        )
-        safe_vertices = vertices[finite_mask & bounds_mask]
+        safe_points = []
+
+        for x, y in vertices:
+
+            if (not math.isfinite(float(x))) or (not math.isfinite(float(y))):
+                continue
+
+            if abs(float(x)) > safe_limit or abs(float(y)) > safe_limit:
+                continue
+
+            safe_points.append((float(x), float(y)))
+
+        safe_vertices = np.array(safe_points, dtype="f4") if safe_points else np.empty((0, 2), dtype="f4")
 
         if safe_vertices.size == 0:
             return

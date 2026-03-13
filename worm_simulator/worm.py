@@ -9,9 +9,10 @@ MOVE_COST = 0.2
 AGE_LIMIT = 5000
 REPRODUCTION_COST = 2000
 SEGMENTS = 24
-SEGMENT_LENGTH = 3
-STIFFNESS = 0.5
-DAMPING = 0.9
+SEGMENT_LENGTH = 4
+STIFFNESS = 0.25
+DAMPING = 0.85
+MAX_STRETCH = SEGMENT_LENGTH * 2.0
 SENSOR_DISTANCE = 6
 
 
@@ -133,12 +134,7 @@ class Worm:
         self.body[0] = (self.x, self.y)
         self.vel[0] = (0.0, 0.0)
 
-        for i in range(1, self.segments):
-            vx, vy = self.vel[i]
-            cx, cy = self.body[i]
-            self.body[i] = (cx + vx * dt, cy + vy * dt)
-
-        for i in range(1, self.segments):
+        for i in range(1, SEGMENTS):
 
             px, py = self.body[i - 1]
             cx, cy = self.body[i]
@@ -152,24 +148,24 @@ class Worm:
                 continue
 
             # Clamp maximum stretch to prevent runaway segment explosions.
-            max_dist = SEGMENT_LENGTH * 2
-            if dist > max_dist:
-                scale = max_dist / dist
-                dx *= scale
-                dy *= scale
-                dist = max_dist
+            if dist > MAX_STRETCH:
+                cx = px + dx / dist * MAX_STRETCH
+                cy = py + dy / dist * MAX_STRETCH
+                dx = cx - px
+                dy = cy - py
+                dist = MAX_STRETCH
 
             diff = (dist - SEGMENT_LENGTH) / dist
-
-            old_cx, old_cy = cx, cy
 
             cx -= dx * diff * STIFFNESS
             cy -= dy * diff * STIFFNESS
 
             vx, vy = self.vel[i]
-            inv_dt = 1.0 / max(dt, 1e-6)
-            vx = (vx + (cx - old_cx) * inv_dt) * DAMPING
-            vy = (vy + (cy - old_cy) * inv_dt) * DAMPING
+            vx *= DAMPING
+            vy *= DAMPING
+
+            cx += vx
+            cy += vy
 
             self.body[i] = (cx, cy)
             self.vel[i] = (vx, vy)
@@ -186,14 +182,24 @@ class Worm:
 
         self.body[0] = (self.x, self.y)
 
-        for i, (bx, by) in enumerate(self.body):
-            if abs(bx) > WORLD_SIZE * 5 or abs(by) > WORLD_SIZE * 5:
-                if i == 0:
-                    self.body[i] = (self.x, self.y)
-                    self.vel[i] = (0.0, 0.0)
-                else:
-                    self.body[i] = self.body[i - 1]
-                    self.vel[i] = (0.0, 0.0)
+        hx, hy = self.body[0]
+        if (not math.isfinite(hx)) or (not math.isfinite(hy)):
+            self.body[0] = (self.x, self.y)
+            self.vel[0] = (0.0, 0.0)
+        elif abs(hx) > WORLD_SIZE * 2 or abs(hy) > WORLD_SIZE * 2:
+            self.body[0] = (self.x, self.y)
+            self.vel[0] = (0.0, 0.0)
+
+        for i, (bx, by) in enumerate(self.body[1:], start=1):
+
+            if (not math.isfinite(bx)) or (not math.isfinite(by)):
+                self.body[i] = self.body[i - 1]
+                self.vel[i] = (0.0, 0.0)
+                continue
+
+            if abs(bx) > WORLD_SIZE * 2 or abs(by) > WORLD_SIZE * 2:
+                self.body[i] = self.body[i - 1]
+                self.vel[i] = (0.0, 0.0)
 
         x = int(self.x) % WORLD_SIZE
         y = int(self.y) % WORLD_SIZE
