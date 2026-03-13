@@ -55,6 +55,7 @@ follow_index = 0
 follow_mode = True
 births_per_sec = 0.0
 deaths_per_sec = 0.0
+view_mode = 0
 
 while running:
 
@@ -73,12 +74,18 @@ while running:
 
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_1:
-                simulation_speed = 0.5
+                view_mode = 0
             if event.key == pygame.K_2:
-                simulation_speed = 1.0
+                view_mode = 1
             if event.key == pygame.K_3:
-                simulation_speed = 2.0
+                view_mode = 2
             if event.key == pygame.K_4:
+                simulation_speed = 0.5
+            if event.key == pygame.K_5:
+                simulation_speed = 1.0
+            if event.key == pygame.K_6:
+                simulation_speed = 2.0
+            if event.key == pygame.K_7:
                 simulation_speed = 5.0
 
             if event.key == pygame.K_w:
@@ -225,12 +232,33 @@ while running:
     )
     head_positions = np.array(head_positions, dtype="f4") if head_positions else np.empty((0, 2), dtype="f4")
 
+    empty_points = np.empty((0, 2), dtype="f4")
+
+    if view_mode == 0:
+        render_worm_strips = worm_strips
+        render_food_layers = food_layers
+        render_chemical_layers = []
+        render_pheromone_positions = empty_points
+        render_head_positions = head_positions
+    elif view_mode == 1:
+        render_worm_strips = []
+        render_food_layers = []
+        render_chemical_layers = chemical_layers
+        render_pheromone_positions = empty_points
+        render_head_positions = empty_points
+    else:
+        render_worm_strips = []
+        render_food_layers = []
+        render_chemical_layers = []
+        render_pheromone_positions = pheromone_positions
+        render_head_positions = empty_points
+
     renderer.render(
-        worm_strips,
-        pheromone_positions,
-        food_layers,
-        chemical_layers,
-        head_positions,
+        render_worm_strips,
+        render_pheromone_positions,
+        render_food_layers,
+        render_chemical_layers,
+        render_head_positions,
         (camera_x / WORLD_SIZE) * world_scale,
         (camera_y / WORLD_SIZE) * world_scale,
         zoom,
@@ -251,6 +279,7 @@ while running:
         imgui.text(f"Births/s: {births_per_sec:.2f}")
         imgui.text(f"Deaths/s: {deaths_per_sec:.2f}")
         imgui.text(f"Speed: {simulation_speed:.1f}x")
+        imgui.text(f"View: {view_mode} (1:Eco 2:Chem 3:Phero)")
         imgui.text(f"Zoom: {zoom:.2f}")
         imgui.text(f"Follow: {'ON' if follow_mode else 'OFF'}")
         imgui.end()
@@ -261,7 +290,7 @@ while running:
             f"Worm Simulator GPU | Worms:{len(worms)} AvgEnergy:{avg_energy:.1f} "
             f"Food:{total_food:.0f} Phero:{total_pheromone:.0f} "
             f"B/s:{births_per_sec:.2f} D/s:{deaths_per_sec:.2f} "
-            f"Speed:{simulation_speed:.1f}x Zoom:{zoom:.2f}"
+            f"Speed:{simulation_speed:.1f}x View:{view_mode} Zoom:{zoom:.2f}"
         )
 
     pygame.display.flip()
