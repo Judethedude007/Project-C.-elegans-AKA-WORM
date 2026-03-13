@@ -14,6 +14,12 @@ def draw_world(screen, camera, world):
 
             food = world.food[wx, wy]
             pheromone = world.pheromone[wx, wy]
+            temperature = world.temperature[wx, wy]
+            obstacle = world.obstacles[wx, wy]
+
+            if obstacle:
+                pygame.draw.rect(screen, (28, 20, 12), (sx, sy, sample_step, sample_step))
+                continue
 
             if food > 0.2:
                 intensity = int(food * 180)
@@ -23,6 +29,11 @@ def draw_world(screen, camera, world):
             if pheromone > 0.01:
                 color = (40, 100, 180)
                 pygame.draw.rect(screen, color, (sx, sy, sample_step, sample_step))
+
+            if temperature > 0.65:
+                pygame.draw.rect(screen, (70, 40, 20), (sx, sy, sample_step, sample_step), 1)
+            elif temperature < 0.35:
+                pygame.draw.rect(screen, (20, 40, 70), (sx, sy, sample_step, sample_step), 1)
 
 
 def draw_worm(screen, camera, worm):

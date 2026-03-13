@@ -6,30 +6,41 @@ from config import (
     WORM_SEGMENTS,
     WORLD_SIZE,
     FOOD_ENERGY,
-    BRAIN_NEURONS,
-    TURN_SPEED,
     WORM_SPEED,
     METABOLISM,
     PHEROMONE_DEPOSIT,
     REPRODUCTION_COST,
+    SEGMENT_LENGTH,
+    MUSCLE_GAIN,
+    SEGMENT_DAMPING,
+    SEGMENT_PROPAGATION,
 )
 
 
 class Worm:
 
-    def __init__(self, x, y, sex=None):
+    def __init__(self, x, y, connectome_setup, sex=None):
 
         self.x = x
         self.y = y
 
         self.angle = random.uniform(0, math.tau)
-        self.time = 0
+        self.time = 0.0
 
         self.energy = 100
 
-        self.brain = Brain(BRAIN_NEURONS)
+        self.segment_angles = np.zeros(WORM_SEGMENTS, dtype=float)
+        self.segment_velocity = np.zeros(WORM_SEGMENTS, dtype=float)
+
+        self.brain = Brain(
+            connectome_setup["connections"],
+            connectome_setup["neuron_order"],
+            connectome_setup["sensory_map"],
+            connectome_setup["motor_map"],
+        )
         self.sex = sex if sex else random.choice(["male", "hermaphrodite"])
-        self.reproduction_cooldown = 0
+        self.reproduction_cooldown = 0.0
+        self.preferred_temperature = random.uniform(0.35, 0.65)
 
     def sense(self, world):
 
@@ -37,76 +48,99 @@ class Worm:
         smell_y = self.y + math.sin(self.angle) * 6
         food_smell = world.get_food(smell_x, smell_y)
 
-        touch = 1.0 if food_smell > 0.95 else 0.0
+        touch_x = self.x + math.cos(self.angle) * 3
+        touch_y = self.y + math.sin(self.angle) * 3
+        touch = 1.0 if world.is_obstacle(touch_x, touch_y) else 0.0
 
-        temperature = 0.5
-
+        temperature = world.get_temperature(self.x, self.y)
         pheromone = min(world.get_pheromone(self.x, self.y), 1.0)
 
-        return np.array([food_smell, touch, temperature, pheromone], dtype=float)
+        return {
+            "food_smell": float(food_smell),
+            "touch": float(touch),
+            "temperature": float(temperature),
+            "pheromone": float(pheromone),
+        }
 
-    def update(self, world):
+    def update(self, world, dt):
 
         if self.energy <= 0:
             return
 
-        self.time += 0.1
+        scale = dt * 60.0
+        self.time += dt
 
         if self.reproduction_cooldown > 0:
-            self.reproduction_cooldown -= 1
+            self.reproduction_cooldown = max(0.0, self.reproduction_cooldown - dt)
 
-        inputs = np.zeros(self.brain.n, dtype=float)
-        inputs[:4] = self.sense(world)
-        spikes = self.brain.step(inputs)
+        sensor_inputs = self.sense(world)
+        motor, _ = self.brain.step(sensor_inputs)
 
-        turn_left = bool(spikes[0])
-        turn_right = bool(spikes[1])
-        forward = bool(spikes[2])
-
-        if turn_left and not turn_right:
-            self.angle -= TURN_SPEED
-        elif turn_right and not turn_left:
-            self.angle += TURN_SPEED
+        motor_left = motor["left"]
+        motor_right = motor["right"]
+        motor_forward = motor["forward"]
 
         ix = int(self.x) % WORLD_SIZE
         iy = int(self.y) % WORLD_SIZE
         left = world.food[(ix - 1) % WORLD_SIZE, iy]
         right = world.food[(ix + 1) % WORLD_SIZE, iy]
+        chemotaxis = (right - left) * 0.2
 
-        self.angle += (right - left) * 0.2
-        self.angle += random.uniform(-0.1, 0.1)
+        thermal_error = self.preferred_temperature - world.get_temperature(self.x, self.y)
+        thermal_turn = thermal_error * 0.12
 
-        move_scale = 1.2 if forward else 0.6
-        self.x = (self.x + math.cos(self.angle) * WORM_SPEED * move_scale) % WORLD_SIZE
-        self.y = (self.y + math.sin(self.angle) * WORM_SPEED * move_scale) % WORLD_SIZE
+        turning_noise = random.uniform(-0.1, 0.1)
+
+        curvature = (motor_left - motor_right) * MUSCLE_GAIN + chemotaxis + thermal_turn + turning_noise
+
+        self.segment_velocity[0] += curvature * 0.25 * scale
+        self.segment_velocity[0] *= SEGMENT_DAMPING
+        self.segment_angles[0] += self.segment_velocity[0] * dt
+
+        for i in range(1, WORM_SEGMENTS):
+            force = (self.segment_angles[i - 1] - self.segment_angles[i]) * SEGMENT_PROPAGATION
+            self.segment_velocity[i] += force * scale
+            self.segment_velocity[i] *= SEGMENT_DAMPING
+            self.segment_angles[i] += self.segment_velocity[i] * dt
+
+        self.segment_angles *= 0.995
+        self.angle += self.segment_angles[0] * 0.6 * scale
+
+        drive = 0.55 + 0.45 * motor_forward
+        next_x = (self.x + math.cos(self.angle) * WORM_SPEED * drive * scale) % WORLD_SIZE
+        next_y = (self.y + math.sin(self.angle) * WORM_SPEED * drive * scale) % WORLD_SIZE
+
+        if world.is_obstacle(next_x, next_y):
+            self.angle += random.uniform(-1.2, 1.2)
+        else:
+            self.x = next_x
+            self.y = next_y
 
         food = world.eat(int(self.x), int(self.y))
         self.energy += food * FOOD_ENERGY
 
-        world.deposit_pheromone(int(self.x), int(self.y), PHEROMONE_DEPOSIT)
+        world.deposit_pheromone(int(self.x), int(self.y), PHEROMONE_DEPOSIT * scale)
 
-        self.energy -= METABOLISM
+        self.energy -= METABOLISM * scale
 
     def can_reproduce(self):
-        return self.energy > (100 + REPRODUCTION_COST) and self.reproduction_cooldown == 0
+        return self.energy > (100 + REPRODUCTION_COST) and self.reproduction_cooldown <= 0
 
     def reproduce(self):
         self.energy -= REPRODUCTION_COST
-        self.reproduction_cooldown = 300
+        self.reproduction_cooldown = 5.0
 
     def body_points(self):
 
-        points = []
+        points = [(self.x, self.y)]
+        px = self.x
+        py = self.y
+        heading = self.angle
 
-        for i in range(WORM_SEGMENTS):
-
-            dx = i * 4
-
-            dy = math.sin(self.time * 2 + i * 0.7) * 5
-
-            px = self.x - dx * math.cos(self.angle)
-            py = self.y - dx * math.sin(self.angle) + dy
-
+        for i in range(1, WORM_SEGMENTS):
+            heading += self.segment_angles[i - 1]
+            px -= SEGMENT_LENGTH * math.cos(heading)
+            py -= SEGMENT_LENGTH * math.sin(heading)
             points.append((px, py))
 
         return points
