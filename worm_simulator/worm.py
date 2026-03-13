@@ -68,6 +68,14 @@ class Worm:
         elif turn_right and not turn_left:
             self.angle += TURN_SPEED
 
+        ix = int(self.x) % WORLD_SIZE
+        iy = int(self.y) % WORLD_SIZE
+        left = world.food[(ix - 1) % WORLD_SIZE, iy]
+        right = world.food[(ix + 1) % WORLD_SIZE, iy]
+
+        self.angle += (right - left) * 0.2
+        self.angle += random.uniform(-0.1, 0.1)
+
         move_scale = 1.2 if forward else 0.6
         self.x = (self.x + math.cos(self.angle) * WORM_SPEED * move_scale) % WORLD_SIZE
         self.y = (self.y + math.sin(self.angle) * WORM_SPEED * move_scale) % WORLD_SIZE
@@ -94,7 +102,7 @@ class Worm:
 
             dx = i * 4
 
-            dy = math.sin(self.time + i * 0.5) * 5
+            dy = math.sin(self.time * 2 + i * 0.7) * 5
 
             px = self.x - dx * math.cos(self.angle)
             py = self.y - dx * math.sin(self.angle) + dy

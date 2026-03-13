@@ -44,6 +44,9 @@ clock = pygame.time.Clock()
 font = pygame.font.Font(None, 28)
 
 running = True
+simulation_speed = 1
+follow = True
+target_worm = worms[0] if worms else None
 
 while running:
 
@@ -56,61 +59,86 @@ while running:
             camera.zoom += event.y * ZOOM_SPEED
             camera.zoom = max(0.2, min(camera.zoom, 5.0))
 
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_f:
+                follow = not follow
+                if follow and worms:
+                    target_worm = worms[0]
+            if event.key == pygame.K_1:
+                simulation_speed = 1
+            if event.key == pygame.K_2:
+                simulation_speed = 5
+            if event.key == pygame.K_3:
+                simulation_speed = 20
+            if event.key == pygame.K_4:
+                simulation_speed = 100
+
     keys = pygame.key.get_pressed()
 
     camera_speed = 12 / max(camera.zoom, 0.2)
-    if keys[pygame.K_LEFT]:
-        camera.move(-camera_speed, 0)
-    if keys[pygame.K_RIGHT]:
-        camera.move(camera_speed, 0)
-    if keys[pygame.K_UP]:
-        camera.move(0, -camera_speed)
-    if keys[pygame.K_DOWN]:
-        camera.move(0, camera_speed)
+    if not follow:
+        if keys[pygame.K_LEFT]:
+            camera.move(-camera_speed, 0)
+        if keys[pygame.K_RIGHT]:
+            camera.move(camera_speed, 0)
+        if keys[pygame.K_UP]:
+            camera.move(0, -camera_speed)
+        if keys[pygame.K_DOWN]:
+            camera.move(0, camera_speed)
 
-    world.update()
+    for _ in range(simulation_speed):
 
-    for w in worms:
-        w.update(world)
+        world.update()
 
-    worms = [w for w in worms if w.energy > 0]
+        for w in worms:
+            w.update(world)
 
-    newborns = []
-    if len(worms) < MAX_WORMS:
-        males = [w for w in worms if w.sex == "male" and w.can_reproduce()]
-        hermaphrodites = [w for w in worms if w.sex == "hermaphrodite" and w.can_reproduce()]
+        worms = [w for w in worms if w.energy > 0]
 
-        for male in males:
-            for herm in hermaphrodites:
-                if len(worms) + len(newborns) >= MAX_WORMS:
-                    break
+        newborns = []
+        if len(worms) < MAX_WORMS:
+            males = [w for w in worms if w.sex == "male" and w.can_reproduce()]
+            hermaphrodites = [w for w in worms if w.sex == "hermaphrodite" and w.can_reproduce()]
 
-                dx_raw = abs(male.x - herm.x)
-                dy_raw = abs(male.y - herm.y)
-                dx = min(dx_raw, WORLD_SIZE - dx_raw)
-                dy = min(dy_raw, WORLD_SIZE - dy_raw)
+            for male in males:
+                for herm in hermaphrodites:
+                    if len(worms) + len(newborns) >= MAX_WORMS:
+                        break
 
-                if (dx * dx + dy * dy) <= (MATING_DISTANCE * MATING_DISTANCE):
-                    male.reproduce()
-                    herm.reproduce()
+                    dx_raw = abs(male.x - herm.x)
+                    dy_raw = abs(male.y - herm.y)
+                    dx = min(dx_raw, WORLD_SIZE - dx_raw)
+                    dy = min(dy_raw, WORLD_SIZE - dy_raw)
 
-                    child = Worm(
-                        (male.x + herm.x) * 0.5 + random.uniform(-5, 5),
-                        (male.y + herm.y) * 0.5 + random.uniform(-5, 5),
-                    )
-                    child.x %= WORLD_SIZE
-                    child.y %= WORLD_SIZE
+                    if (dx * dx + dy * dy) <= (MATING_DISTANCE * MATING_DISTANCE):
+                        male.reproduce()
+                        herm.reproduce()
 
-                    child.brain.weights = (
-                        (male.brain.weights + herm.brain.weights) * 0.5
-                        + np.random.randn(*male.brain.weights.shape) * 0.02
-                    )
-                    newborns.append(child)
-                    break
+                        child = Worm(
+                            (male.x + herm.x) * 0.5 + random.uniform(-5, 5),
+                            (male.y + herm.y) * 0.5 + random.uniform(-5, 5),
+                        )
+                        child.x %= WORLD_SIZE
+                        child.y %= WORLD_SIZE
 
-    worms.extend(newborns)
+                        child.brain.weights = (
+                            (male.brain.weights + herm.brain.weights) * 0.5
+                            + np.random.randn(*male.brain.weights.shape) * 0.02
+                        )
+                        newborns.append(child)
+                        break
 
-    screen.fill((5, 5, 8))
+        worms.extend(newborns)
+
+    if worms and follow:
+        if target_worm not in worms:
+            target_worm = worms[0]
+        camera.x = target_worm.x - SCREEN_WIDTH / 2
+        camera.y = target_worm.y - SCREEN_HEIGHT / 2
+    elif not worms:
+        target_worm = None
+
+    screen.fill((45, 35, 20))
 
     draw_world(screen, camera, world)
     for w in worms:
@@ -121,12 +149,13 @@ while running:
     else:
         avg_energy = 0
 
-    hud = font.render(
-        f"Worms: {len(worms)}  Avg Energy: {avg_energy:.1f}  Zoom: {camera.zoom:.2f}",
-        True,
-        (240, 240, 240),
+    pygame.draw.rect(screen, (18, 18, 18), (0, 0, SCREEN_WIDTH, 40))
+    text = (
+        f"Worms:{len(worms)}  Avg Energy:{avg_energy:.1f}  "
+        f"Speed:{simulation_speed}x  Zoom:{camera.zoom:.2f}"
     )
-    screen.blit(hud, (12, 12))
+    surface = font.render(text, True, (255, 255, 255))
+    screen.blit(surface, (10, 10))
 
     pygame.display.flip()
 
