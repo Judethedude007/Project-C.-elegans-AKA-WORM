@@ -1,7 +1,7 @@
 import math
 import random
 from brain import Brain
-from config import WORM_SEGMENTS, WORLD_SIZE
+from config import WORLD_SIZE
 
 
 class Worm:
@@ -19,6 +19,8 @@ class Worm:
         self.age = 0
         self.dead = False
         self.trail = []
+        self.segments = 20
+        self.body = [(self.x, self.y) for _ in range(self.segments)]
 
         self.brain = Brain()
 
@@ -73,16 +75,35 @@ class Worm:
         self.x = (self.x + math.cos(self.angle) * speed) % WORLD_SIZE
         self.y = (self.y + math.sin(self.angle) * speed) % WORLD_SIZE
 
-        if len(self.trail) > 0:
-            dx = self.x - self.trail[-1][0]
-            dy = self.y - self.trail[-1][1]
+        dx = self.x - self.trail[-1][0] if self.trail else 0
+        dy = self.y - self.trail[-1][1] if self.trail else 0
 
-            if dx * dx + dy * dy > 50:
-                self.trail.clear()
+        if dx * dx + dy * dy > 100:
+            self.trail.clear()
 
         self.trail.append((self.x, self.y))
         if len(self.trail) > 50:
             self.trail.pop(0)
+
+        self.body[0] = (self.x, self.y)
+
+        for i in range(1, self.segments):
+
+            px, py = self.body[i - 1]
+            cx, cy = self.body[i]
+
+            dx = px - cx
+            dy = py - cy
+
+            dist = (dx * dx + dy * dy) ** 0.5
+
+            target = 4
+
+            if dist > 0:
+                cx += dx / dist * (dist - target)
+                cy += dy / dist * (dist - target)
+
+            self.body[i] = (cx, cy)
 
         x = int(self.x) % WORLD_SIZE
         y = int(self.y) % WORLD_SIZE
@@ -97,6 +118,8 @@ class Worm:
 
             self.energy += eat * 40
 
+        world.pheromone[x, y] += 1
+
         if self.energy <= 0:
             self.dead = True
 
@@ -105,15 +128,16 @@ class Worm:
 
     def body_points(self):
 
-        points = []
-        amplitude = 2.0 + min(abs(self.angular_velocity), 1.5) * 2.0
-        wave_rate = self.time * 8.0
+        smooth_points = []
 
-        for i in range(WORM_SEGMENTS):
-            dx = i * 3
-            dy = amplitude * math.sin(i * 0.7 - wave_rate)
-            px = self.x - dx * math.cos(self.angle)
-            py = self.y - dx * math.sin(self.angle) + dy
-            points.append((px, py))
+        for i in range(len(self.body) - 1):
+            x1, y1 = self.body[i]
+            x2, y2 = self.body[i + 1]
 
-        return points
+            smooth_points.append((x1, y1))
+            smooth_points.append(((x1 + x2) / 2, (y1 + y2) / 2))
+
+        if self.body:
+            smooth_points.append(self.body[-1])
+
+        return smooth_points

@@ -112,7 +112,6 @@ while running:
         camera_y = (avg_y / WORLD_SIZE) * world_scale
 
     worm_strips = []
-    trail_strips = []
     head_positions = []
 
     for worm in worms:
@@ -125,27 +124,48 @@ while running:
             worm_strips.append(np.array(strip, dtype="f4"))
             head_positions.append(strip[0])
 
-        if worm.trail:
-            strip = []
-            for t in worm.trail:
-                tx = (t[0] / WORLD_SIZE) * world_scale
-                ty = (t[1] / WORLD_SIZE) * world_scale
-                strip.append([tx, ty])
-            if len(strip) > 1:
-                trail_strips.append(np.array(strip, dtype="f4"))
+    food_low = []
+    food_mid = []
+    food_high = []
+    pheromone_positions = []
 
-    food_positions = []
     for x in range(WORLD_SIZE):
         for y in range(WORLD_SIZE):
-            if world.food[x, y] > 0.6 and random.random() < 0.1:
-                gx = (x / WORLD_SIZE) * world_scale
-                gy = (y / WORLD_SIZE) * world_scale
-                food_positions.append([gx, gy])
+            gx = (x / WORLD_SIZE) * world_scale
+            gy = (y / WORLD_SIZE) * world_scale
 
-    food_positions = np.array(food_positions, dtype="f4") if food_positions else np.empty((0, 2), dtype="f4")
+            food_value = world.food[x, y]
+            if food_value > 0.75 and random.random() < 0.18:
+                food_high.append([gx, gy])
+            elif food_value > 0.45 and random.random() < 0.12:
+                food_mid.append([gx, gy])
+            elif food_value > 0.2 and random.random() < 0.06:
+                food_low.append([gx, gy])
+
+            if world.pheromone[x, y] > 0.15 and random.random() < 0.2:
+                pheromone_positions.append([gx, gy])
+
+    food_layers = [
+        (
+            np.array(food_low, dtype="f4") if food_low else np.empty((0, 2), dtype="f4"),
+            (0.1, 0.45, 0.1),
+        ),
+        (
+            np.array(food_mid, dtype="f4") if food_mid else np.empty((0, 2), dtype="f4"),
+            (0.15, 0.7, 0.15),
+        ),
+        (
+            np.array(food_high, dtype="f4") if food_high else np.empty((0, 2), dtype="f4"),
+            (0.25, 1.0, 0.25),
+        ),
+    ]
+
+    pheromone_positions = (
+        np.array(pheromone_positions, dtype="f4") if pheromone_positions else np.empty((0, 2), dtype="f4")
+    )
     head_positions = np.array(head_positions, dtype="f4") if head_positions else np.empty((0, 2), dtype="f4")
 
-    renderer.render(worm_strips, trail_strips, food_positions, head_positions, camera_x, camera_y, zoom)
+    renderer.render(worm_strips, pheromone_positions, food_layers, head_positions, camera_x, camera_y, zoom)
 
     avg_energy = (sum(w.energy for w in worms) / len(worms)) if worms else 0.0
 

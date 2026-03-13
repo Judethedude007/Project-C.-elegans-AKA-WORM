@@ -12,6 +12,15 @@ class World:
     def update(self, dt=1 / 60):
 
         self.food += 0.0005
+
+        diffusion = (
+            np.roll(self.food, 1, 0)
+            + np.roll(self.food, -1, 0)
+            + np.roll(self.food, 1, 1)
+            + np.roll(self.food, -1, 1)
+        ) / 4
+
+        self.food += 0.1 * (diffusion - self.food)
         self.food = np.clip(self.food, 0, 1)
 
         # Keep pheromone trails but let them fade over time.

@@ -56,17 +56,17 @@ class GPURenderer:
         self.vbo.write(vertices[:count].astype("f4").tobytes())
         self.vao.render(mode=mode, vertices=count)
 
-    def render(self, worm_strips, trail_strips, food_positions, head_positions, camera_x, camera_y, zoom):
+    def render(self, worm_strips, pheromone_positions, food_layers, head_positions, camera_x, camera_y, zoom):
 
         self.ctx.clear(0.05, 0.05, 0.05)
 
         self.program["camera"].value = (camera_x, camera_y)
         self.program["zoom"].value = zoom
 
-        self._render_vertices(food_positions, (0.2, 1.0, 0.2), moderngl.POINTS)
+        for vertices, color in food_layers:
+            self._render_vertices(vertices, color, moderngl.POINTS)
 
-        for trail in trail_strips:
-            self._render_vertices(trail, (0.45, 0.6, 0.9), moderngl.LINE_STRIP)
+        self._render_vertices(pheromone_positions, (0.45, 0.6, 0.9), moderngl.POINTS)
 
         for worm_strip in worm_strips:
             self._render_vertices(worm_strip, (1.0, 1.0, 1.0), moderngl.LINE_STRIP)
