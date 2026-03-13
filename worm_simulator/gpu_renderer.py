@@ -102,6 +102,10 @@ class GPURenderer:
         self._render_vertices(pheromone_positions, (0.45, 0.6, 0.9), moderngl.POINTS)
 
         for worm_strip in worm_strips:
-            self._render_vertices(worm_strip, (1.0, 1.0, 1.0), moderngl.LINE_STRIP)
+            if isinstance(worm_strip, tuple):
+                vertices, color = worm_strip
+            else:
+                vertices, color = worm_strip, (1.0, 1.0, 1.0)
+            self._render_vertices(vertices, color, moderngl.LINE_STRIP)
 
         self._render_vertices(head_positions, (1.0, 0.25, 0.25), moderngl.POINTS)

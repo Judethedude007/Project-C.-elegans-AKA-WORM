@@ -53,6 +53,8 @@ zoom = 10.0
 
 follow_index = 0
 follow_mode = True
+births_per_sec = 0.0
+deaths_per_sec = 0.0
 
 while running:
 
@@ -102,13 +104,20 @@ while running:
 
     world.update(dt)
 
+    pre_count = len(worms)
     new_worms = []
+    survivors = [w for w in worms if w.update(world, dt, new_worms)]
+    births = len(new_worms)
+    deaths = max(0, pre_count - len(survivors))
+    worms = survivors
+    worms.extend(new_worms)
+
+    instant_births = births / max(dt, 1e-6)
+    instant_deaths = deaths / max(dt, 1e-6)
+    births_per_sec = births_per_sec * 0.9 + instant_births * 0.1
+    deaths_per_sec = deaths_per_sec * 0.9 + instant_deaths * 0.1
 
     for worm in worms:
-        baby = worm.update(world, dt)
-        if baby is not None:
-            new_worms.append(baby)
-
         if len(worm.body) == 0:
             continue
 
@@ -118,10 +127,6 @@ while running:
             worm.y = WORLD_SIZE / 2
             worm.body = [(worm.x, worm.y) for _ in range(SEGMENTS)]
             worm.vel = [(0.0, 0.0) for _ in range(SEGMENTS)]
-
-    worms.extend(new_worms)
-
-    worms = [w for w in worms if not w.dead]
 
     if follow_mode and worms:
         target = worms[follow_index % len(worms)]
@@ -141,7 +146,17 @@ while running:
             y = (p[1] / WORLD_SIZE) * world_scale
             strip.append([x, y])
         if strip:
-            worm_strips.append(np.array(strip, dtype="f4"))
+            energy = worm.energy
+            if energy < 60.0:
+                t = max(0.0, min(energy / 60.0, 1.0))
+                color = (1.0, 0.2 + 0.8 * t, 0.2 + 0.8 * t)
+            elif energy > 140.0:
+                t = max(0.0, min((energy - 140.0) / 120.0, 1.0))
+                color = (1.0 - 0.6 * t, 1.0 - 0.3 * t, 1.0)
+            else:
+                color = (1.0, 1.0, 1.0)
+
+            worm_strips.append((np.array(strip, dtype="f4"), color))
             head_positions.append(strip[0])
 
     food_low = []
@@ -155,10 +170,10 @@ while running:
             gx = (x / WORLD_SIZE) * world_scale
             gy = (y / WORLD_SIZE) * world_scale
 
-            food_value = world.food[x, y]
-            if food_value > 0.75 and random.random() < 0.18:
+            food_value = world.food_grid[x, y]
+            if food_value > 5.0 and random.random() < 0.18:
                 food_high.append([gx, gy])
-            elif food_value > 0.45 and random.random() < 0.12:
+            elif food_value > 1.0 and random.random() < 0.12:
                 food_mid.append([gx, gy])
             elif food_value > 0.2 and random.random() < 0.06:
                 food_low.append([gx, gy])
@@ -180,7 +195,7 @@ while running:
             gy = (cy / chem_grid_size) * world_scale
 
             if chem_value > 0.1 and random.random() < 0.25:
-                intensity = min(chem_value / 10.0, 1.0)
+                intensity = min(chem_value / 100.0, 1.0)
                 bucket = min(int(intensity * len(chem_buckets)), len(chem_buckets) - 1)
                 chem_buckets[bucket].append([gx, gy])
 
@@ -222,6 +237,8 @@ while running:
     )
 
     avg_energy = (sum(w.energy for w in worms) / len(worms)) if worms else 0.0
+    total_food = float(np.sum(world.food))
+    total_pheromone = float(np.sum(world.pheromone))
 
     if imgui_renderer:
         imgui_renderer.process_inputs()
@@ -229,6 +246,10 @@ while running:
         imgui.begin("Simulation")
         imgui.text(f"Worms: {len(worms)}")
         imgui.text(f"Avg Energy: {avg_energy:.1f}")
+        imgui.text(f"Food Total: {total_food:.1f}")
+        imgui.text(f"Pheromone Total: {total_pheromone:.1f}")
+        imgui.text(f"Births/s: {births_per_sec:.2f}")
+        imgui.text(f"Deaths/s: {deaths_per_sec:.2f}")
         imgui.text(f"Speed: {simulation_speed:.1f}x")
         imgui.text(f"Zoom: {zoom:.2f}")
         imgui.text(f"Follow: {'ON' if follow_mode else 'OFF'}")
@@ -238,6 +259,8 @@ while running:
     else:
         pygame.display.set_caption(
             f"Worm Simulator GPU | Worms:{len(worms)} AvgEnergy:{avg_energy:.1f} "
+            f"Food:{total_food:.0f} Phero:{total_pheromone:.0f} "
+            f"B/s:{births_per_sec:.2f} D/s:{deaths_per_sec:.2f} "
             f"Speed:{simulation_speed:.1f}x Zoom:{zoom:.2f}"
         )
 

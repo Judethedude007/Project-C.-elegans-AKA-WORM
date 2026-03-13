@@ -8,17 +8,17 @@ METABOLISM = 0.3
 MOVE_COST = 0.2
 AGE_LIMIT = 5000
 REPRODUCTION_COST = 2000
-SEGMENTS = 24
-SEGMENT_LENGTH = 4
+SEGMENTS = 16
+SEGMENT_LENGTH = 5
 STIFFNESS = 0.25
 DAMPING = 0.85
 MAX_STRETCH = SEGMENT_LENGTH * 2.0
-SENSOR_DISTANCE = 6
+SENSOR_DISTANCE = 25
 
 
 def sample_chem(env, x, y):
-    gx = int((x % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
-    gy = int((y % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+    gx = int(x / WORLD_SIZE * GRID_SIZE)
+    gy = int(y / WORLD_SIZE * GRID_SIZE)
 
     if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
         return float(env.chem[gx][gy])
@@ -28,7 +28,7 @@ def sample_chem(env, x, y):
 
 class Worm:
 
-    def __init__(self, x, y):
+    def __init__(self, x, y, genes=None):
 
         self.x = x
         self.y = y
@@ -39,8 +39,26 @@ class Worm:
         self.wave_phase = 0.0
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
+        self.vx = 0.0
+        self.vy = 0.0
+        self.speed = 1.5
 
-        self.energy = 200
+        if genes is None:
+            genes = {
+                "speed": 1.0,
+                "sensor_range": float(SENSOR_DISTANCE),
+                "turn_sensitivity": 0.25,
+                "metabolism": 0.01,
+            }
+
+        self.genes = {
+            "speed": float(genes.get("speed", 1.0)),
+            "sensor_range": float(genes.get("sensor_range", SENSOR_DISTANCE)),
+            "turn_sensitivity": float(genes.get("turn_sensitivity", 0.25)),
+            "metabolism": float(genes.get("metabolism", 0.01)),
+        }
+
+        self.energy = 100
         self.age = 0
         self.dead = False
         self.trail = []
@@ -55,17 +73,17 @@ class Worm:
         x = int(self.x) % WORLD_SIZE
         y = int(self.y) % WORLD_SIZE
 
-        left = world.food[(x - 3) % WORLD_SIZE, y]
-        right = world.food[(x + 3) % WORLD_SIZE, y]
-        up = world.food[x, (y - 3) % WORLD_SIZE]
-        down = world.food[x, (y + 3) % WORLD_SIZE]
+        left = world.food_grid[(x - 3) % WORLD_SIZE, y]
+        right = world.food_grid[(x + 3) % WORLD_SIZE, y]
+        up = world.food_grid[x, (y - 3) % WORLD_SIZE]
+        down = world.food_grid[x, (y + 3) % WORLD_SIZE]
 
         return left, right, up, down
 
-    def update(self, world, dt=1 / 60):
+    def update(self, world, dt=1 / 60, new_worms=None):
 
         if self.dead:
-            return None
+            return False
 
         self.time += dt
 
@@ -74,13 +92,14 @@ class Worm:
         food_x = right - left
         food_y = down - up
 
+        sensor_distance = self.genes["sensor_range"]
         left_sensor = (
-            self.x + math.cos(self.angle + 0.4) * SENSOR_DISTANCE,
-            self.y + math.sin(self.angle + 0.4) * SENSOR_DISTANCE,
+            self.x + math.cos(self.angle + 0.5) * sensor_distance,
+            self.y + math.sin(self.angle + 0.5) * sensor_distance,
         )
         right_sensor = (
-            self.x + math.cos(self.angle - 0.4) * SENSOR_DISTANCE,
-            self.y + math.sin(self.angle - 0.4) * SENSOR_DISTANCE,
+            self.x + math.cos(self.angle - 0.5) * sensor_distance,
+            self.y + math.sin(self.angle - 0.5) * sensor_distance,
         )
 
         left_val = sample_chem(world, *left_sensor)
@@ -89,7 +108,7 @@ class Worm:
         inputs = [food_x, food_y, 0, 0, 0, 0, 0, 0, 0, 0]
 
         for i in range(len(inputs)):
-            inputs[i] += random.uniform(-0.02, 0.02)
+            inputs[i] += random.uniform(-0.002, 0.002)
 
         brain_output = self.brain.step(inputs)
 
@@ -107,19 +126,40 @@ class Worm:
 
         self.angle += self.angular_velocity
 
-        turn_strength = 0.05
-        self.angle += (right_val - left_val) * turn_strength
+        turn_strength = self.genes["turn_sensitivity"]
+        self.angle += (left_val - right_val) * turn_strength
+
+        self.angle += random.uniform(-0.002, 0.002)
+
+        center_val = sample_chem(world, self.x, self.y)
+        self.speed = 1.2 - center_val * 0.6
+        self.speed *= self.genes["speed"]
+        self.speed = max(0.2, self.speed)
+
+        margin = 40
+        if self.x < margin:
+            self.angle = 0
+        if self.x > WORLD_SIZE - margin:
+            self.angle = math.pi
+        if self.y < margin:
+            self.angle = math.pi / 2
+        if self.y > WORLD_SIZE - margin:
+            self.angle = -math.pi / 2
 
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
 
-        self.energy -= METABOLISM
-        self.energy -= abs(self.angular_velocity) * MOVE_COST
+        self.energy -= self.genes["metabolism"] * dt
         self.age += dt
 
-        speed = 1.5
-        self.x = (self.x + math.cos(self.angle) * speed) % WORLD_SIZE
-        self.y = (self.y + math.sin(self.angle) * speed) % WORLD_SIZE
+        self.vx = math.cos(self.angle) * self.speed
+        self.vy = math.sin(self.angle) * self.speed
+
+        self.x += self.vx * dt
+        self.y += self.vy * dt
+
+        self.x = max(0.0, min(self.x, WORLD_SIZE - 1e-6))
+        self.y = max(0.0, min(self.y, WORLD_SIZE - 1e-6))
 
         dx = self.x - self.trail[-1][0] if self.trail else 0
         dy = self.y - self.trail[-1][1] if self.trail else 0
@@ -147,34 +187,30 @@ class Worm:
             if dist == 0:
                 continue
 
-            # Clamp maximum stretch to prevent runaway segment explosions.
-            if dist > MAX_STRETCH:
-                cx = px + dx / dist * MAX_STRETCH
-                cy = py + dy / dist * MAX_STRETCH
-                dx = cx - px
-                dy = cy - py
-                dist = MAX_STRETCH
-
             diff = (dist - SEGMENT_LENGTH) / dist
 
-            cx -= dx * diff * STIFFNESS
-            cy -= dy * diff * STIFFNESS
+            offset_x = dx * diff * 0.5
+            offset_y = dy * diff * 0.5
 
-            vx, vy = self.vel[i]
-            vx *= DAMPING
-            vy *= DAMPING
+            px += offset_x
+            py += offset_y
 
-            cx += vx
-            cy += vy
+            cx -= offset_x
+            cy -= offset_y
 
+            px = max(0.0, min(WORLD_SIZE, px))
+            py = max(0.0, min(WORLD_SIZE, py))
+            cx = max(0.0, min(WORLD_SIZE, cx))
+            cy = max(0.0, min(WORLD_SIZE, cy))
+
+            self.body[i - 1] = (px, py)
             self.body[i] = (cx, cy)
-            self.vel[i] = (vx, vy)
 
-        self.wave_phase += dt * 4
+        amplitude = 2.0
+        phase = self.time * 4
         for i in range(self.segments):
             x, y = self.body[i]
-            wave = math.sin(self.wave_phase - i * 0.5)
-            offset = wave * 2
+            offset = math.sin(i * 0.6 - phase) * amplitude
             self.body[i] = (
                 x + offset * self.direction_y,
                 y - offset * self.direction_x,
@@ -201,40 +237,54 @@ class Worm:
                 self.body[i] = self.body[i - 1]
                 self.vel[i] = (0.0, 0.0)
 
-        x = int(self.x) % WORLD_SIZE
-        y = int(self.y) % WORLD_SIZE
+        gx = int(self.x / WORLD_SIZE * GRID_SIZE)
+        gy = int(self.y / WORLD_SIZE * GRID_SIZE)
 
-        food = world.food[x, y]
+        if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE and world.food[gx, gy] > 0:
 
-        if food > 0.2:
+            eaten = min(world.food[gx, gy], 0.5)
 
-            eat = min(food, 0.3)
+            world.food[gx, gy] -= eaten
 
-            world.food[x, y] -= eat
+            self.energy += eaten * 20
 
-            self.energy += eat * 40
-
-        gx = int((self.x % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
-        gy = int((self.y % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
             world.pheromone[gx, gy] += 0.5
 
-        if self.energy > REPRODUCTION_COST and random.random() < 0.002:
+        if self.energy > 160:
             self.energy *= 0.5
+
+            child_genes = {
+                "speed": max(0.5, min(2.5, self.genes["speed"] + random.uniform(-0.05, 0.05))),
+                "sensor_range": max(8.0, min(40.0, self.genes["sensor_range"] + random.uniform(-1.0, 1.0))),
+                "turn_sensitivity": max(
+                    0.05,
+                    min(0.6, self.genes["turn_sensitivity"] + random.uniform(-0.03, 0.03)),
+                ),
+                "metabolism": max(0.002, min(0.05, self.genes["metabolism"] + random.uniform(-0.001, 0.001))),
+            }
+
             baby = Worm(
                 (self.x + random.uniform(-5, 5)) % WORLD_SIZE,
                 (self.y + random.uniform(-5, 5)) % WORLD_SIZE,
+                genes=child_genes,
             )
-            baby.energy = self.energy
-            return baby
+            if new_worms is not None:
+                new_worms.append(baby)
+            else:
+                return True
+
+        self.energy = max(0.0, self.energy)
 
         if self.energy <= 0:
             self.dead = True
+            return False
 
         if self.age > AGE_LIMIT:
             self.dead = True
+            return False
 
-        return None
+        return True
 
     def smooth_body(self):
 
