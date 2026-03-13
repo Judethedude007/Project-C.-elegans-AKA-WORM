@@ -73,25 +73,33 @@ class Worm:
         if self.reproduction_cooldown > 0:
             self.reproduction_cooldown = max(0.0, self.reproduction_cooldown - dt)
 
-        sensor_inputs = self.sense(world)
-        motor, _ = self.brain.step(sensor_inputs)
-
-        motor_left = motor["left"]
-        motor_right = motor["right"]
-        motor_forward = motor["forward"]
-
+        # Step 2: local food sensing for chemotaxis.
         ix = int(self.x) % WORLD_SIZE
         iy = int(self.y) % WORLD_SIZE
+
         left = world.food[(ix - 1) % WORLD_SIZE, iy]
         right = world.food[(ix + 1) % WORLD_SIZE, iy]
-        chemotaxis = (right - left) * 0.2
 
-        thermal_error = self.preferred_temperature - world.get_temperature(self.x, self.y)
-        thermal_turn = thermal_error * 0.12
+        up = world.food[ix, (iy - 1) % WORLD_SIZE]
+        down = world.food[ix, (iy + 1) % WORLD_SIZE]
 
-        turning_noise = random.uniform(-0.1, 0.1)
+        turn = (right - left) * 0.5
+        self.angle += turn
 
-        curvature = (motor_left - motor_right) * MUSCLE_GAIN + chemotaxis + thermal_turn + turning_noise
+        # Step 6: larger attraction radius.
+        food_gradient_x = world.food[(ix + 3) % WORLD_SIZE, iy] - world.food[(ix - 3) % WORLD_SIZE, iy]
+        food_gradient_y = world.food[ix, (iy + 3) % WORLD_SIZE] - world.food[ix, (iy - 3) % WORLD_SIZE]
+        self.angle += food_gradient_x * 0.2
+        self.angle += food_gradient_y * 0.05
+
+        # Step 8: pheromone following.
+        pher = world.pheromone[ix, iy]
+        self.angle += pher * 0.1
+
+        # Step 4: very small randomness to prevent locking into circles.
+        self.angle += random.uniform(-0.02, 0.02)
+
+        curvature = (turn + food_gradient_x * 0.2 + food_gradient_y * 0.05 + pher * 0.1) * MUSCLE_GAIN
 
         self.segment_velocity[0] += curvature * 0.25 * scale
         self.segment_velocity[0] *= SEGMENT_DAMPING
@@ -106,9 +114,16 @@ class Worm:
         self.segment_angles *= 0.995
         self.angle += self.segment_angles[0] * 0.6 * scale
 
-        drive = 0.55 + 0.45 * motor_forward
-        next_x = (self.x + math.cos(self.angle) * WORM_SPEED * drive * scale) % WORLD_SIZE
-        next_y = (self.y + math.sin(self.angle) * WORM_SPEED * drive * scale) % WORLD_SIZE
+        # Step 7: hungry worms search more aggressively.
+        if self.energy < 50:
+            speed = 2.0
+        else:
+            speed = 1.0
+
+        # Step 3: forward exploration.
+        base_speed = 1.5
+        next_x = (self.x + math.cos(self.angle) * base_speed * speed * scale) % WORLD_SIZE
+        next_y = (self.y + math.sin(self.angle) * base_speed * speed * scale) % WORLD_SIZE
 
         if world.is_obstacle(next_x, next_y):
             self.angle += random.uniform(-1.2, 1.2)
@@ -116,10 +131,17 @@ class Worm:
             self.x = next_x
             self.y = next_y
 
-        food = world.eat(int(self.x), int(self.y))
-        self.energy += food * FOOD_ENERGY
+        cx = int(self.x) % WORLD_SIZE
+        cy = int(self.y) % WORLD_SIZE
 
-        world.deposit_pheromone(int(self.x), int(self.y), PHEROMONE_DEPOSIT * scale)
+        # Step 5: eat food when reaching it.
+        food = world.food[cx, cy]
+        if food > 0.2:
+            self.energy += food * 10
+            world.food[cx, cy] *= 0.5
+
+        # Step 8: leave pheromone trail.
+        world.pheromone[cx, cy] += 0.01 * scale
 
         self.energy -= METABOLISM * scale
 
