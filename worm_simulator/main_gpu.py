@@ -137,6 +137,9 @@ while running:
     food_low = []
     food_mid = []
     food_high = []
+    chem_low = []
+    chem_mid = []
+    chem_high = []
     pheromone_positions = []
 
     for x in range(WORLD_SIZE):
@@ -155,6 +158,20 @@ while running:
             if world.pheromone[x, y] > 0.15 and random.random() < 0.2:
                 pheromone_positions.append([gx, gy])
 
+    chem_grid_size = world.chem.shape[0]
+    for cx in range(chem_grid_size):
+        for cy in range(chem_grid_size):
+            chem_value = world.chem[cx, cy]
+            gx = (cx / chem_grid_size) * world_scale
+            gy = (cy / chem_grid_size) * world_scale
+
+            if chem_value > 60 and random.random() < 0.25:
+                chem_high.append([gx, gy])
+            elif chem_value > 20 and random.random() < 0.15:
+                chem_mid.append([gx, gy])
+            elif chem_value > 5 and random.random() < 0.08:
+                chem_low.append([gx, gy])
+
     food_layers = [
         (
             np.array(food_low, dtype="f4") if food_low else np.empty((0, 2), dtype="f4"),
@@ -170,6 +187,21 @@ while running:
         ),
     ]
 
+    chemical_layers = [
+        (
+            np.array(chem_low, dtype="f4") if chem_low else np.empty((0, 2), dtype="f4"),
+            (0.0, 0.25, 0.0),
+        ),
+        (
+            np.array(chem_mid, dtype="f4") if chem_mid else np.empty((0, 2), dtype="f4"),
+            (0.0, 0.45, 0.0),
+        ),
+        (
+            np.array(chem_high, dtype="f4") if chem_high else np.empty((0, 2), dtype="f4"),
+            (0.0, 0.7, 0.0),
+        ),
+    ]
+
     pheromone_positions = (
         np.array(pheromone_positions, dtype="f4") if pheromone_positions else np.empty((0, 2), dtype="f4")
     )
@@ -179,6 +211,7 @@ while running:
         worm_strips,
         pheromone_positions,
         food_layers,
+        chemical_layers,
         head_positions,
         (camera_x / WORLD_SIZE) * world_scale,
         (camera_y / WORLD_SIZE) * world_scale,

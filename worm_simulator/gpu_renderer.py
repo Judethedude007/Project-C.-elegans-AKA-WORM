@@ -56,7 +56,17 @@ class GPURenderer:
         self.vbo.write(vertices[:count].astype("f4").tobytes())
         self.vao.render(mode=mode, vertices=count)
 
-    def render(self, worm_strips, pheromone_positions, food_layers, head_positions, camera_x, camera_y, zoom):
+    def render(
+        self,
+        worm_strips,
+        pheromone_positions,
+        food_layers,
+        chemical_layers,
+        head_positions,
+        camera_x,
+        camera_y,
+        zoom,
+    ):
 
         self.ctx.clear(0.05, 0.05, 0.05)
 
@@ -64,6 +74,9 @@ class GPURenderer:
         self.program["zoom"].value = zoom
 
         for vertices, color in food_layers:
+            self._render_vertices(vertices, color, moderngl.POINTS)
+
+        for vertices, color in chemical_layers:
             self._render_vertices(vertices, color, moderngl.POINTS)
 
         self._render_vertices(pheromone_positions, (0.45, 0.6, 0.9), moderngl.POINTS)

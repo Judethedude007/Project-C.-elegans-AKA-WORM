@@ -2,6 +2,7 @@ import math
 import random
 from brain import Brain
 from config import WORLD_SIZE
+from world import GRID_SIZE
 
 METABOLISM = 0.3
 MOVE_COST = 0.2
@@ -9,6 +10,17 @@ AGE_LIMIT = 5000
 REPRODUCTION_COST = 2000
 SEGMENTS = 20
 SEGMENT_LENGTH = 3
+SENSOR_DISTANCE = 6
+
+
+def sample_chem(env, x, y):
+    gx = int((x % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+    gy = int((y % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+
+    if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
+        return float(env.chem[gx][gy])
+
+    return 0.0
 
 
 class Worm:
@@ -58,6 +70,18 @@ class Worm:
         food_x = right - left
         food_y = down - up
 
+        left_sensor = (
+            self.x + math.cos(self.angle + 0.4) * SENSOR_DISTANCE,
+            self.y + math.sin(self.angle + 0.4) * SENSOR_DISTANCE,
+        )
+        right_sensor = (
+            self.x + math.cos(self.angle - 0.4) * SENSOR_DISTANCE,
+            self.y + math.sin(self.angle - 0.4) * SENSOR_DISTANCE,
+        )
+
+        left_val = sample_chem(world, *left_sensor)
+        right_val = sample_chem(world, *right_sensor)
+
         inputs = [food_x, food_y, 0, 0, 0, 0, 0, 0, 0, 0]
 
         for i in range(len(inputs)):
@@ -78,6 +102,9 @@ class Worm:
         self.angular_velocity *= 0.9
 
         self.angle += self.angular_velocity
+
+        turn_strength = 0.05
+        self.angle += (right_val - left_val) * turn_strength
 
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
