@@ -71,6 +71,13 @@ class Worm:
         self.x = (self.x + math.cos(self.angle) * speed) % WORLD_SIZE
         self.y = (self.y + math.sin(self.angle) * speed) % WORLD_SIZE
 
+        if len(self.trail) > 0:
+            dx = self.x - self.trail[-1][0]
+            dy = self.y - self.trail[-1][1]
+
+            if dx * dx + dy * dy > 50:
+                self.trail.clear()
+
         self.trail.append((self.x, self.y))
         if len(self.trail) > 50:
             self.trail.pop(0)

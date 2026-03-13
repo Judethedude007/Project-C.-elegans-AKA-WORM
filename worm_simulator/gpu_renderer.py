@@ -11,6 +11,7 @@ class GPURenderer:
         self.ctx = moderngl.create_context()
         self.ctx.enable(moderngl.BLEND)
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        self.ctx.line_width = 2.0
 
         self.program = self.ctx.program(
             vertex_shader="""
@@ -23,7 +24,7 @@ class GPURenderer:
                 {
                     vec2 pos = (in_pos - camera) * zoom;
                     gl_Position = vec4(pos, 0.0, 1.0);
-                    gl_PointSize = 6.0;
+                    gl_PointSize = 8.0;
                 }
             """,
             fragment_shader="""
@@ -51,10 +52,11 @@ class GPURenderer:
 
         count = min(len(vertices), self.max_vertices)
         self.program["color"].value = color
+        self.vbo.orphan()
         self.vbo.write(vertices[:count].astype("f4").tobytes())
         self.vao.render(mode=mode, vertices=count)
 
-    def render(self, worm_positions, trail_strips, food_positions, camera_x, camera_y, zoom):
+    def render(self, worm_strips, trail_strips, food_positions, camera_x, camera_y, zoom):
 
         self.ctx.clear(0.05, 0.05, 0.05)
 
@@ -62,7 +64,9 @@ class GPURenderer:
         self.program["zoom"].value = zoom
 
         self._render_vertices(food_positions, (0.2, 1.0, 0.2), moderngl.POINTS)
-        self._render_vertices(worm_positions, (1.0, 0.3, 0.3), moderngl.POINTS)
+
+        for worm_strip in worm_strips:
+            self._render_vertices(worm_strip, (0.8, 0.9, 1.0), moderngl.LINE_STRIP)
 
         for trail in trail_strips:
-            self._render_vertices(trail, (0.6, 0.8, 1.0), moderngl.LINE_STRIP)
+            self._render_vertices(trail, (0.45, 0.6, 0.9), moderngl.LINE_STRIP)

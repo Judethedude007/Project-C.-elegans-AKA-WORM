@@ -38,6 +38,7 @@ clock = pygame.time.Clock()
 
 running = True
 simulation_speed = 1.0
+world_scale = 0.2
 
 camera_x = 0.0
 camera_y = 0.0
@@ -99,40 +100,41 @@ while running:
 
     if follow_mode and worms:
         target = worms[follow_index % len(worms)]
-        camera_x = (target.x / WORLD_SIZE) * 2 - 1
-        camera_y = (target.y / WORLD_SIZE) * 2 - 1
+        camera_x = (target.x / WORLD_SIZE) * world_scale
+        camera_y = (target.y / WORLD_SIZE) * world_scale
 
-    positions = []
+    worm_strips = []
     trail_strips = []
 
     for worm in worms:
+        strip = []
         for p in worm.body_points():
-            x = (p[0] / WORLD_SIZE) * 2 - 1
-            y = (p[1] / WORLD_SIZE) * 2 - 1
-            positions.append([x, y])
+            x = (p[0] / WORLD_SIZE) * world_scale
+            y = (p[1] / WORLD_SIZE) * world_scale
+            strip.append([x, y])
+        if strip:
+            worm_strips.append(np.array(strip, dtype="f4"))
 
         if worm.trail:
             strip = []
             for t in worm.trail:
-                tx = (t[0] / WORLD_SIZE) * 2 - 1
-                ty = (t[1] / WORLD_SIZE) * 2 - 1
+                tx = (t[0] / WORLD_SIZE) * world_scale
+                ty = (t[1] / WORLD_SIZE) * world_scale
                 strip.append([tx, ty])
             if len(strip) > 1:
                 trail_strips.append(np.array(strip, dtype="f4"))
 
-    worm_positions = np.array(positions, dtype="f4") if positions else np.empty((0, 2), dtype="f4")
-
     food_positions = []
     for x in range(WORLD_SIZE):
         for y in range(WORLD_SIZE):
-            if world.food[x, y] > 0.5:
-                gx = (x / WORLD_SIZE) * 2 - 1
-                gy = (y / WORLD_SIZE) * 2 - 1
+            if world.food[x, y] > 0.6 and random.random() < 0.1:
+                gx = (x / WORLD_SIZE) * world_scale
+                gy = (y / WORLD_SIZE) * world_scale
                 food_positions.append([gx, gy])
 
     food_positions = np.array(food_positions, dtype="f4") if food_positions else np.empty((0, 2), dtype="f4")
 
-    renderer.render(worm_positions, trail_strips, food_positions, camera_x, camera_y, zoom)
+    renderer.render(worm_strips, trail_strips, food_positions, camera_x, camera_y, zoom)
 
     avg_energy = (sum(w.energy for w in worms) / len(worms)) if worms else 0.0
 
