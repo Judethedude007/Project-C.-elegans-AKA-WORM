@@ -14,18 +14,24 @@ class World:
         self.food_patches = []
 
         self.food = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
+        self.food_capacity = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.food_grid = np.zeros((WORLD_SIZE, WORLD_SIZE), dtype=np.float32)
         self.pheromone = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.chem = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.medium = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
+        self.oxygen = np.ones((GRID_SIZE, GRID_SIZE), dtype=np.float32)
 
         self._world_to_food_idx = np.linspace(0, GRID_SIZE - 1, WORLD_SIZE).astype(np.int32)
 
-        for _ in range(8):
+        for _ in range(10):
             cx = random.uniform(100.0, WORLD_SIZE - 100.0)
             cy = random.uniform(100.0, WORLD_SIZE - 100.0)
             self._add_food_gaussian(cx, cy)
             self.food_patches.append({"x": cx, "y": cy})
+
+        np.clip(self.food, 0.0, 1.0, out=self.food)
+        self.food_capacity[:] = self.food
+        self.oxygen = 1.0 - (self.food * 0.3)
 
         for _ in range(5):
             gx = random.randint(0, GRID_SIZE - 1)
@@ -68,13 +74,11 @@ class World:
             + np.roll(self.food, -1, 1)
         ) / 4
         self.food += 0.02 * (food_diffusion - self.food)
-
-        if random.random() < 0.02:
-            cx = random.randint(100, WORLD_SIZE - 100)
-            cy = random.randint(100, WORLD_SIZE - 100)
-            self._add_food_gaussian(cx, cy)
-
-        np.clip(self.food, 0.0, 100.0, out=self.food)
+        self.food *= 0.999
+        self.food += 0.01 * self.food_capacity
+        np.clip(self.food, 0.0, 1.0, out=self.food)
+        self.oxygen = 1.0 - (self.food * 0.3)
+        np.clip(self.oxygen, 0.0, 1.0, out=self.oxygen)
 
         self.food_grid = self.food[np.ix_(self._world_to_food_idx, self._world_to_food_idx)]
 

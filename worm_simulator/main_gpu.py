@@ -303,11 +303,11 @@ while running:
             gy = (y / WORLD_SIZE) * world_scale
 
             food_value = world.food_grid[x, y]
-            if food_value > 5.0 and random.random() < 0.18:
+            if food_value > 0.7 and random.random() < 0.18:
                 food_high.append([gx, gy])
-            elif food_value > 1.0 and random.random() < 0.12:
+            elif food_value > 0.3 and random.random() < 0.12:
                 food_mid.append([gx, gy])
-            elif food_value > 0.2 and random.random() < 0.06:
+            elif food_value > 0.08 and random.random() < 0.06:
                 food_low.append([gx, gy])
 
     pheromone_grid_size = world.pheromone.shape[0]

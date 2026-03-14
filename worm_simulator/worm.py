@@ -95,6 +95,7 @@ class Worm:
         self.stage = "juvenile"
         self.locomotion_mode = "crawl"
         self.prev_food_signal = 0.0
+        self.food_adaptation = 0.0
         self.repro_timer = 0.0
         self.generation = 0
         self.state = "RUN"
@@ -150,7 +151,7 @@ class Worm:
         self.gene_turn_bias = self.genome["turn_bias"]
         self.gene_food_weight = self.genome["food_sense"]
         self.gene_pheromone_weight = self.genome["pheromone_sense"]
-        self.gene_reproduction_energy = 180.0 / max(0.7, self.genome["energy_efficiency"])
+        self.gene_reproduction_energy = 160.0 / max(0.7, self.genome["energy_efficiency"])
 
         if genes is None:
             genes = {
@@ -289,7 +290,11 @@ class Worm:
             self.y + math.sin(self.angle - 0.3) * 8,
         )
 
-        food_turn = (left_food - right_food) * 0.05
+        self.food_adaptation += food_here * 0.01
+        self.food_adaptation *= 0.995
+        adaptation_scale = 1.0 + self.food_adaptation
+
+        food_turn = ((left_food - right_food) / adaptation_scale) * 0.05
         food_turn *= self.genome["food_sense"]
 
         pher_left = world.get_pheromone(*left_sensor_pos)
@@ -298,9 +303,10 @@ class Worm:
         pheromone_turn = pher_gradient * 0.3
         pheromone_turn *= self.genome["pheromone_sense"]
 
-        sensory_food_signal = (food_here + left_food + right_food) / 3.0
+        sensory_food_signal = ((food_here + left_food + right_food) / 3.0) / adaptation_scale
         food_gradient = sensory_food_signal - self.prev_food_signal
         food_signal = food_here + food_gradient
+        food_signal /= adaptation_scale
         gradient_change = food_signal - self.prev_food_signal
         self.prev_food_signal = food_signal
 
@@ -309,14 +315,18 @@ class Worm:
         food_left = left_food
         food_right = right_food
         pheromone = pheromone_here
-        oxygen = max(0.0, min(1.0, 1.0 - food_signal / 5.0))
+        oxygen_here = 1.0
+        if 0 <= feed_gx < GRID_SIZE and 0 <= feed_gy < GRID_SIZE:
+            oxygen_here = float(world.oxygen[feed_gx, feed_gy])
+        oxygen_pref = 0.08
+        oxygen_turn = (oxygen_pref - oxygen_here) * 0.2
         touch = max(0.0, min(1.0, (margin - min_edge_distance) / margin)) * 3.0
 
         local_density = world.count_worms_near(self.x, self.y, radius=20)
         collision_signal = max(touch, max(0.0, min(1.0, (local_density - 1.0) / 10.0)))
 
         self.neurons["ASE"] = food_gradient
-        self.neurons["AWA"] = food_here
+        self.neurons["AWA"] = food_signal
         self.neurons["ASH"] = collision_signal
 
         if food_here < 0.02 and pheromone_here > 0.4:
@@ -415,14 +425,15 @@ class Worm:
         if pheromone_here > 0.25:
             random_turn *= 0.3
         turn_combined = (
-            0.6 * food_turn
-            + 0.15 * random_turn
+            0.5 * food_turn
+            + 0.2 * pheromone_turn
+            + 0.2 * oxygen_turn
+            + 0.1 * random_turn
         )
         self.angular_velocity *= 0.75
         if abs(turn_combined) < 0.01:
             self.angular_velocity *= 0.6
         self.angular_velocity += turn_combined
-        self.angular_velocity += pheromone_turn
         self.angular_velocity += turn_bias * self.genome["turn_bias"]
         turn_signal = self.neurons["ASE"] * 0.4
         self.angular_velocity *= 0.6
@@ -589,7 +600,7 @@ class Worm:
                 self.body[i] = (cx, cy)
 
         efficiency = max(0.6, self.genome["energy_efficiency"])
-        energy_loss = (0.02 / efficiency) * dt
+        energy_loss = (0.015 / efficiency) * dt
         if self.dauer:
             energy_loss *= 0.3
 
@@ -606,7 +617,7 @@ class Worm:
                 eaten = min(0.05, world.food[gx, gy])
 
                 world.food[gx, gy] -= eaten
-                self.energy += eaten * 5
+                self.energy += eaten * 7
                 food_eaten += eaten
                 eating = True
 
