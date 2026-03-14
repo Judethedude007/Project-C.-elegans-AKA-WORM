@@ -65,6 +65,7 @@ class World:
                 self.medium[gx, gy] = value
 
     def update(self, dt=1 / 60):
+        time_scale = max(dt * 60.0, 0.0)
 
         # Food exists as a consumable resource grid that slowly spreads and respawns.
         food_diffusion = (
@@ -73,9 +74,9 @@ class World:
             + np.roll(self.food, 1, 1)
             + np.roll(self.food, -1, 1)
         ) / 4
-        self.food += 0.02 * (food_diffusion - self.food)
-        self.food *= 0.999
-        self.food += 0.01 * self.food_capacity
+        self.food += 0.02 * (food_diffusion - self.food) * time_scale
+        self.food *= 0.999 ** time_scale
+        self.food += 0.01 * self.food_capacity * time_scale
         np.clip(self.food, 0.0, 1.0, out=self.food)
         self.oxygen = 1.0 - (self.food * 0.3)
         np.clip(self.oxygen, 0.0, 1.0, out=self.oxygen)
@@ -83,7 +84,7 @@ class World:
         self.food_grid = self.food[np.ix_(self._world_to_food_idx, self._world_to_food_idx)]
 
         # Food releases chemical signal into the smell map.
-        self.chem += self.food * 2.5
+        self.chem += self.food * 2.5 * time_scale
 
         # Diffuse chemical concentration to neighboring cells.
         new_chem = np.zeros_like(self.chem)
@@ -104,7 +105,7 @@ class World:
             print("chem max:", max_val)
 
         # Pheromone decays slowly over time.
-        self.pheromone *= 0.995
+        self.pheromone *= 0.995 ** time_scale
         np.clip(self.pheromone, 0.0, 1000.0, out=self.pheromone)
 
     def get_food(self, x, y):

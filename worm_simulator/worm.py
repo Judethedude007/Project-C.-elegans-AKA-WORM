@@ -290,8 +290,9 @@ class Worm:
             self.y + math.sin(self.angle - 0.3) * 8,
         )
 
-        self.food_adaptation += food_here * 0.01
-        self.food_adaptation *= 0.995
+        time_scale = max(dt * 60.0, 0.0)
+        self.food_adaptation += food_here * 0.02 * dt
+        self.food_adaptation *= 0.995 ** time_scale
         adaptation_scale = 1.0 + self.food_adaptation
 
         food_turn = ((left_food - right_food) / adaptation_scale) * 0.05
@@ -319,7 +320,8 @@ class Worm:
         if 0 <= feed_gx < GRID_SIZE and 0 <= feed_gy < GRID_SIZE:
             oxygen_here = float(world.oxygen[feed_gx, feed_gy])
         oxygen_pref = 0.08
-        oxygen_turn = (oxygen_pref - oxygen_here) * 0.2
+        oxygen_signal = oxygen_pref - oxygen_here
+        oxygen_turn = oxygen_signal * 0.3
         touch = max(0.0, min(1.0, (margin - min_edge_distance) / margin)) * 3.0
 
         local_density = world.count_worms_near(self.x, self.y, radius=20)
@@ -425,9 +427,9 @@ class Worm:
         if pheromone_here > 0.25:
             random_turn *= 0.3
         turn_combined = (
-            0.5 * food_turn
+            0.45 * food_turn
             + 0.2 * pheromone_turn
-            + 0.2 * oxygen_turn
+            + 0.25 * oxygen_turn
             + 0.1 * random_turn
         )
         self.angular_velocity *= 0.75
@@ -614,7 +616,7 @@ class Worm:
 
             if world.food[gx, gy] > 0 and not self.dauer:
 
-                eaten = min(0.05, world.food[gx, gy])
+                eaten = min(0.05 * time_scale, world.food[gx, gy])
 
                 world.food[gx, gy] -= eaten
                 self.energy += eaten * 7
