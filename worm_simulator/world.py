@@ -37,12 +37,17 @@ class World:
             fy = random.randint(0, GRID_SIZE - 1)
             self.food[fx, fy] += 10.0
 
+        if random.random() < 0.02:
+            x = random.randint(0, GRID_SIZE - 1)
+            y = random.randint(0, GRID_SIZE - 1)
+            self.food[x, y] += random.uniform(3, 8)
+
         np.clip(self.food, 0.0, 100.0, out=self.food)
 
         self.food_grid = self.food[np.ix_(self._world_to_food_idx, self._world_to_food_idx)]
 
         # Food releases chemical signal into the smell map.
-        self.chem += self.food * 12.0
+        self.chem += self.food * 2.5
 
         # Diffuse chemical concentration to neighboring cells.
         new_chem = np.zeros_like(self.chem)
@@ -63,7 +68,7 @@ class World:
             print("chem max:", max_val)
 
         # Pheromone decays slowly over time.
-        self.pheromone[1:-1, 1:-1] *= 0.98
+        self.pheromone[1:-1, 1:-1] *= 0.97
         np.clip(self.pheromone, 0.0, 1000.0, out=self.pheromone)
 
     def get_food(self, x, y):

@@ -47,6 +47,7 @@ class Worm:
         self.syn_left = 0.5
         self.syn_right = 0.5
         self.size = 0.4
+        self.behavior = "roam"
 
         if genes is None:
             genes = {
@@ -64,7 +65,7 @@ class Worm:
         }
 
         self.energy = 100
-        self.age = 0
+        self.age = 0.0
         self.dead = False
         self.trail = []
         self.segments = SEGMENTS
@@ -94,7 +95,8 @@ class Worm:
 
         self.time += dt
         self.neural_phase += dt * 3.0
-        self.size += dt * 0.02
+        growth_rate = 0.05
+        self.size += growth_rate * dt
         self.size = min(self.size, 1.0)
         segment_length = BASE_SEGMENT_LENGTH * self.size
 
@@ -115,6 +117,8 @@ class Worm:
 
         left_sensor = sample_chem(world, *left_sensor_pos)
         right_sensor = sample_chem(world, *right_sensor_pos)
+        left_sensor *= 1.5
+        right_sensor *= 1.5
 
         eating = False
         feed_gx = int(self.x / WORLD_SIZE * GRID_SIZE)
@@ -123,8 +127,15 @@ class Worm:
         if 0 <= feed_gx < GRID_SIZE and 0 <= feed_gy < GRID_SIZE:
             food_here = float(world.food[feed_gx, feed_gy])
 
-        if food_here > 0:
+        if food_here > 0.8:
             eating = True
+
+        food_signal = food_here
+
+        if food_signal > 1.2:
+            self.behavior = "dwell"
+        elif food_signal < 0.3:
+            self.behavior = "roam"
 
         inputs = [food_x, food_y, 0, 0, 0, 0, 0, 0, 0, 0]
 
@@ -134,20 +145,20 @@ class Worm:
         brain_output = self.brain.step(inputs)
 
         if brain_output[5]:
-            self.angle -= 0.2
+            self.angle -= 0.05
 
         if brain_output[6]:
-            self.angle += 0.2
+            self.angle += 0.05
 
         curvature = brain_output[5] - brain_output[6]
         self.angle += curvature * 0.05
 
         self.angular_velocity += curvature
-        self.angular_velocity *= 0.9
+        self.angular_velocity *= 0.85
 
-        self.angle += self.angular_velocity
+        self.angle += self.angular_velocity * dt * 60
 
-        delta = (right_sensor - left_sensor) * 0.001
+        delta = (right_sensor - left_sensor) * 0.0002
 
         self.syn_left += delta
         self.syn_right -= delta
@@ -158,28 +169,28 @@ class Worm:
         turn = (
             right_sensor * self.syn_right
             - left_sensor * self.syn_left
-        ) * 0.15
+        ) * 0.06
         MAX_TURN = 0.06
         turn = max(-MAX_TURN, min(MAX_TURN, turn))
-        self.angle += turn
+        self.angle += turn * dt * 60
 
         self.angle += random.uniform(-0.02, 0.02)
 
         margin = 40
         if self.x < margin:
-            self.angle = 0
+            self.angle += 0.05
         if self.x > WORLD_SIZE - margin:
-            self.angle = math.pi
+            self.angle -= 0.05
         if self.y < margin:
-            self.angle = math.pi / 2
+            self.angle += 0.05
         if self.y > WORLD_SIZE - margin:
-            self.angle = -math.pi / 2
+            self.angle -= 0.05
 
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
 
-        self.energy -= self.genes["metabolism"] * dt
-        self.age += dt
+        self.energy -= self.genes["metabolism"] * dt * 0.7
+        self.age += dt * 0.5
 
         self.body[0] = (self.x, self.y)
         self.vel[0] = (0.0, 0.0)
@@ -235,11 +246,16 @@ class Worm:
         speed = self.genes["speed"] * 1.4
 
         if eating:
-            speed *= 0.2
+            speed *= 0.65
+
+        if self.behavior == "dwell":
+            speed *= 0.6
+        else:
+            speed *= 1.0
 
         forward_speed = speed * dt * 30
 
-        max_step = 4.0
+        max_step = 2.0
 
         dx = math.cos(self.angle) * forward_speed
         dy = math.sin(self.angle) * forward_speed
@@ -267,7 +283,7 @@ class Worm:
                 eaten = min(5, world.food[gx, gy])
 
                 world.food[gx, gy] -= eaten
-                self.energy += eaten * 2
+                self.energy += eaten * 5
                 eating = True
 
         dx = self.x - self.trail[-1][0] if self.trail else 0
@@ -318,12 +334,12 @@ class Worm:
                 self.vel[i] = (0.0, 0.0)
 
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
-            world.pheromone[gx, gy] += 0.5
+            world.pheromone[gx, gy] += 0.08
 
-        if self.energy > 120:
+        if self.energy > 100 and self.size > 0.75:
             baby = Worm(
-                (self.x + random.uniform(-6, 6)) % WORLD_SIZE,
-                (self.y + random.uniform(-6, 6)) % WORLD_SIZE,
+                self.x + random.uniform(-5, 5),
+                self.y + random.uniform(-5, 5),
             )
             if new_worms is not None:
                 new_worms.append(baby)
@@ -337,7 +353,8 @@ class Worm:
             self.dead = True
             return False
 
-        if self.age > AGE_LIMIT:
+        MAX_AGE = 500
+        if self.age > MAX_AGE:
             self.dead = True
             return False
 

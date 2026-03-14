@@ -113,10 +113,9 @@ while running:
 
     pre_count = len(worms)
     new_worms = []
-    survivors = [w for w in worms if w.update(world, dt, new_worms)]
+    worms = [w for w in worms if w.update(world, dt, new_worms)]
     births = len(new_worms)
-    deaths = max(0, pre_count - len(survivors))
-    worms = survivors
+    deaths = max(0, pre_count - len(worms))
     worms.extend(new_worms)
 
     instant_births = births / max(dt, 1e-6)
