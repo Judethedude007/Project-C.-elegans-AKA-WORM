@@ -15,6 +15,7 @@ class World:
         self.food_patches = []
 
         self.food = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
+        self.food_age = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.food_capacity = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.food_grid = np.zeros((WORLD_SIZE, WORLD_SIZE), dtype=np.float32)
         self.pheromone = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
@@ -67,17 +68,24 @@ class World:
 
     def update(self, dt=1 / 60):
         time_scale = max(dt * 60.0, 0.0)
+        self.food_age += dt
 
-        # Food exists as a consumable resource grid that slowly spreads and respawns.
-        food_diffusion = (
-            np.roll(self.food, 1, 0)
-            + np.roll(self.food, -1, 0)
-            + np.roll(self.food, 1, 1)
-            + np.roll(self.food, -1, 1)
-        ) / 4
-        self.food += 0.02 * (food_diffusion - self.food) * time_scale
+        # Food patch spreading creates organic cluster growth rather than static fields.
+        self.food += 0.02 * (
+            np.roll(self.food, 1, axis=0)
+            + np.roll(self.food, -1, axis=0)
+            + np.roll(self.food, 1, axis=1)
+            + np.roll(self.food, -1, axis=1)
+            - 4.0 * self.food
+        ) * time_scale
         self.food *= 0.999 ** time_scale
-        self.food += 0.0075 * self.food_capacity * time_scale
+
+        # Sparse regrowth seeds new patches where food is depleted.
+        regrow_chance = min(1.0, 0.0005 * time_scale)
+        regrow_mask = (self.food < 0.1) & (np.random.random(self.food.shape) < regrow_chance)
+        self.food[regrow_mask] += 0.05
+        self.food_age[regrow_mask] = 0.0
+
         np.clip(self.food, 0.0, 1.0, out=self.food)
         self.oxygen = 1.0 - (self.food * 0.3)
         np.clip(self.oxygen, 0.0, 1.0, out=self.oxygen)

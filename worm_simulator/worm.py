@@ -681,6 +681,7 @@ class Worm:
                 eaten = min(0.05 * time_scale, world.food[gx, gy])
 
                 world.food[gx, gy] -= eaten
+                world.food_age[gx, gy] = 0.0
                 self.energy += eaten * 7
                 food_eaten += eaten
                 eating = True
