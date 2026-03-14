@@ -155,13 +155,13 @@ class Worm:
         self.syn_left = max(0.0, min(1.0, self.syn_left))
         self.syn_right = max(0.0, min(1.0, self.syn_right))
 
-        turn = (right_sensor - left_sensor) * 0.08
+        turn = (
+            right_sensor * self.syn_right
+            - left_sensor * self.syn_left
+        ) * 0.15
         MAX_TURN = 0.06
         turn = max(-MAX_TURN, min(MAX_TURN, turn))
-        if eating:
-            self.angle += turn * 0.1
-        else:
-            self.angle += turn
+        self.angle += turn
 
         self.angle += random.uniform(-0.02, 0.02)
 
@@ -237,14 +237,38 @@ class Worm:
         if eating:
             speed *= 0.2
 
-        forward = speed * (0.5 + wave_strength)
-        forward_speed = forward * 1.25
+        forward_speed = speed * dt * 30
 
-        self.x += math.cos(self.angle) * forward_speed * dt
-        self.y += math.sin(self.angle) * forward_speed * dt
+        max_step = 4.0
 
-        self.x = max(0.0, min(self.x, WORLD_SIZE - 1e-6))
-        self.y = max(0.0, min(self.y, WORLD_SIZE - 1e-6))
+        dx = math.cos(self.angle) * forward_speed
+        dy = math.sin(self.angle) * forward_speed
+
+        step = math.sqrt(dx * dx + dy * dy)
+
+        if step > max_step:
+            scale = max_step / step
+            dx *= scale
+            dy *= scale
+
+        self.x += dx
+        self.y += dy
+
+        self.x = max(0, min(WORLD_SIZE, self.x))
+        self.y = max(0, min(WORLD_SIZE, self.y))
+
+        gx = int(self.x / WORLD_SIZE * GRID_SIZE)
+        gy = int(self.y / WORLD_SIZE * GRID_SIZE)
+
+        if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
+
+            if world.food[gx, gy] > 0:
+
+                eaten = min(5, world.food[gx, gy])
+
+                world.food[gx, gy] -= eaten
+                self.energy += eaten * 2
+                eating = True
 
         dx = self.x - self.trail[-1][0] if self.trail else 0
         dy = self.y - self.trail[-1][1] if self.trail else 0
@@ -293,43 +317,19 @@ class Worm:
                 self.body[i] = self.body[i - 1]
                 self.vel[i] = (0.0, 0.0)
 
-        gx = int(self.x / WORLD_SIZE * GRID_SIZE)
-        gy = int(self.y / WORLD_SIZE * GRID_SIZE)
-
-        if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE and world.food[gx, gy] > 0:
-
-            eaten = min(world.food[gx, gy], 0.5)
-
-            world.food[gx, gy] -= eaten
-
-            self.energy += eaten * 24
-            eating = True
-
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
             world.pheromone[gx, gy] += 0.5
 
         if self.energy > 120:
-            self.energy *= 0.5
-
-            child_genes = {
-                "speed": max(0.5, min(2.5, self.genes["speed"] + random.uniform(-0.05, 0.05))),
-                "sensor_range": max(8.0, min(40.0, self.genes["sensor_range"] + random.uniform(-1.0, 1.0))),
-                "turn_sensitivity": max(
-                    0.05,
-                    min(0.6, self.genes["turn_sensitivity"] + random.uniform(-0.03, 0.03)),
-                ),
-                "metabolism": max(0.002, min(0.05, self.genes["metabolism"] + random.uniform(-0.001, 0.001))),
-            }
-
             baby = Worm(
-                (self.x + random.uniform(-5, 5)) % WORLD_SIZE,
-                (self.y + random.uniform(-5, 5)) % WORLD_SIZE,
-                genes=child_genes,
+                (self.x + random.uniform(-6, 6)) % WORLD_SIZE,
+                (self.y + random.uniform(-6, 6)) % WORLD_SIZE,
             )
             if new_worms is not None:
                 new_worms.append(baby)
             else:
                 return True
+            self.energy *= 0.5
 
         self.energy = max(0.0, self.energy)
 
