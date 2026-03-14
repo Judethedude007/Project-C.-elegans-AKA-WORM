@@ -14,13 +14,12 @@ except Exception:
 
 from world import World
 from worm import Worm, Egg, SEGMENTS, SEGMENT_LENGTH
-from config import SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_SIZE
+from config import SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_SIZE, INITIAL_WORMS, MAX_WORMS
 from gpu_renderer import GPURenderer
 
 ZOOM_MIN = max(0.2, 2.0 / WORLD_SIZE)
 ZOOM_MAX = 100.0
 CAMERA_STEP = 12.0
-MAX_WORMS = 150
 
 pygame.init()
 
@@ -37,7 +36,14 @@ else:
     imgui_renderer = None
 
 world = World()
-worms = [Worm(random.uniform(0, WORLD_SIZE - 1), random.uniform(0, WORLD_SIZE - 1)) for _ in range(10)]
+worms = []
+for _ in range(INITIAL_WORMS):
+    patch = random.choice(world.food_patches)
+    x = patch["x"] + random.uniform(-15.0, 15.0)
+    y = patch["y"] + random.uniform(-15.0, 15.0)
+    x = max(0.0, min(x, WORLD_SIZE - 1.0))
+    y = max(0.0, min(y, WORLD_SIZE - 1.0))
+    worms.append(Worm(x, y, inherited_genes={"generation": 0}))
 eggs = []
 
 renderer = GPURenderer(SCREEN_WIDTH, SCREEN_HEIGHT)
@@ -58,6 +64,9 @@ follow_index = 0
 follow_mode = True
 births_per_sec = 0.0
 deaths_per_sec = 0.0
+total_births = 0
+total_deaths = 0
+max_generation = 0
 view_mode = 0
 
 
@@ -189,12 +198,13 @@ while running:
                 egg.x,
                 egg.y,
                 inherited_expression=egg.inherited_expression,
-                inherited_genes=getattr(egg, "inherited_genes", None),
+                inherited_genes=getattr(egg, "inherited_genome", getattr(egg, "inherited_genes", None)),
             )
             larva.size = 0.3
             larva.energy = 40
             larva.age = 0
-            larva.stage = "L1"
+            larva.stage = "juvenile"
+            larva.generation = int(getattr(egg, "generation", 0))
             hatched_worms.append(larva)
         else:
             active_eggs.append(egg)
@@ -202,10 +212,17 @@ while running:
 
     births = len(hatched_worms)
     deaths = max(0, pre_count - len(worms))
+    total_births += births
+    total_deaths += deaths
     worms.extend(new_worms)
     worms.extend(hatched_worms)
     if len(worms) > MAX_WORMS:
         worms = worms[:MAX_WORMS]
+
+    if worms:
+        max_generation = max(max_generation, max(getattr(w, "generation", 0) for w in worms))
+    if eggs:
+        max_generation = max(max_generation, max(getattr(e, "generation", 0) for e in eggs))
 
     instant_births = births / max(dt, 1e-6)
     instant_deaths = deaths / max(dt, 1e-6)
@@ -240,13 +257,13 @@ while running:
             if getattr(worm, "dauer", False):
                 color = (0.35, 0.55, 1.0)
             else:
-                speed_t = max(0.0, min((worm.gene_speed - 0.5) / 1.0, 1.0))
-                food_t = max(0.0, min((worm.gene_food_weight - 0.5) / 1.0, 1.0))
-                repro_t = max(0.0, min((worm.gene_reproduction_energy - 180.0) / 40.0, 1.0))
+                speed_t = max(0.0, min((worm.genome["speed"] - 0.8) / 0.4, 1.0))
+                food_t = max(0.0, min((worm.genome["food_sense"] - 0.8) / 0.4, 1.0))
+                pher_t = max(0.0, min((worm.genome["pheromone_sense"] - 0.8) / 0.4, 1.0))
                 color = (
-                    0.2 + 0.8 * repro_t,
-                    0.2 + 0.8 * food_t,
                     0.2 + 0.8 * speed_t,
+                    0.2 + 0.8 * food_t,
+                    0.2 + 0.8 * pher_t,
                 )
 
             max_gap = SEGMENT_LENGTH * 2.0
@@ -420,6 +437,9 @@ while running:
         imgui.begin("Simulation")
         imgui.text(f"Worms: {len(worms)}")
         imgui.text(f"Eggs: {len(eggs)}")
+        imgui.text(f"Generation: {max_generation}")
+        imgui.text(f"Births: {total_births}")
+        imgui.text(f"Deaths: {total_deaths}")
         imgui.text(f"Avg Energy: {avg_energy:.1f}")
         imgui.text(f"Food Total: {total_food:.1f}")
         imgui.text(f"Pheromone Total: {total_pheromone:.1f}")
@@ -434,7 +454,8 @@ while running:
         imgui_renderer.render(imgui.get_draw_data())
     else:
         pygame.display.set_caption(
-            f"Worm Simulator GPU | Worms:{len(worms)} Eggs:{len(eggs)} AvgEnergy:{avg_energy:.1f} "
+            f"Worm Simulator GPU | Worms:{len(worms)} Eggs:{len(eggs)} Gen:{max_generation} "
+            f"Births:{total_births} Deaths:{total_deaths} AvgEnergy:{avg_energy:.1f} "
             f"Food:{total_food:.0f} Phero:{total_pheromone:.0f} "
             f"B/s:{births_per_sec:.2f} D/s:{deaths_per_sec:.2f} "
             f"Speed:{simulation_speed:.1f}x View:{view_mode} Zoom:{zoom:.2f}"

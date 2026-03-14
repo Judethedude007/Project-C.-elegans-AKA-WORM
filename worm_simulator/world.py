@@ -11,6 +11,7 @@ class World:
         self.width = WORLD_SIZE
         self.height = WORLD_SIZE
         self.worm_positions = []
+        self.food_patches = []
 
         self.food = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.food_grid = np.zeros((WORLD_SIZE, WORLD_SIZE), dtype=np.float32)
@@ -20,10 +21,11 @@ class World:
 
         self._world_to_food_idx = np.linspace(0, GRID_SIZE - 1, WORLD_SIZE).astype(np.int32)
 
-        for _ in range(6):
-            cx = random.randint(100, WORLD_SIZE - 100)
-            cy = random.randint(100, WORLD_SIZE - 100)
+        for _ in range(8):
+            cx = random.uniform(100.0, WORLD_SIZE - 100.0)
+            cy = random.uniform(100.0, WORLD_SIZE - 100.0)
             self._add_food_gaussian(cx, cy)
+            self.food_patches.append({"x": cx, "y": cy})
 
         for _ in range(5):
             gx = random.randint(0, GRID_SIZE - 1)
