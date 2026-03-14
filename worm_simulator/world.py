@@ -11,6 +11,7 @@ class World:
         self.width = WORLD_SIZE
         self.height = WORLD_SIZE
         self.worm_positions = []
+        self.worm_density = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.food_patches = []
 
         self.food = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
@@ -133,6 +134,25 @@ class World:
 
     def set_worm_positions(self, worms):
         self.worm_positions = [(float(w.x), float(w.y)) for w in worms if not getattr(w, "dead", False)]
+        self.worm_density.fill(0.0)
+
+        total_worms = len(self.worm_positions)
+        if total_worms == 0:
+            return
+
+        for wx, wy in self.worm_positions:
+            gx = int((wx % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+            gy = int((wy % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+            self.worm_density[gx % GRID_SIZE, gy % GRID_SIZE] += 1.0
+
+        self.worm_density /= float(total_worms)
+        self.worm_density = (
+            self.worm_density
+            + np.roll(self.worm_density, 1, 0)
+            + np.roll(self.worm_density, -1, 0)
+            + np.roll(self.worm_density, 1, 1)
+            + np.roll(self.worm_density, -1, 1)
+        ) / 5.0
 
     def count_worms_near(self, x, y, radius=20):
         radius_sq = float(radius) * float(radius)

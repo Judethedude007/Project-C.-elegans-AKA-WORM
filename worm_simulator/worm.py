@@ -124,34 +124,62 @@ class Worm:
 
         self.generation = int(inherited_genes.get("generation", 0))
 
+        base_gene_speed = float(
+            inherited_genes.get("gene_speed", inherited_genes.get("speed", random.uniform(0.8, 1.2)))
+        )
+        base_gene_food_sense = float(
+            inherited_genes.get(
+                "gene_food_sense",
+                inherited_genes.get("food_sense", inherited_genes.get("gene_food_weight", random.uniform(0.8, 1.2))),
+            )
+        )
+        base_gene_phero_sense = float(
+            inherited_genes.get(
+                "gene_phero_sense",
+                inherited_genes.get(
+                    "pheromone_sense",
+                    inherited_genes.get("gene_pheromone_weight", random.uniform(0.8, 1.2)),
+                ),
+            )
+        )
+        base_gene_reproduction_energy = float(
+            inherited_genes.get(
+                "gene_reproduction_energy",
+                inherited_genes.get("reproduction_energy", random.uniform(150.0, 220.0)),
+            )
+        )
+
+        self.gene_speed = max(0.6, min(1.4, base_gene_speed))
+        self.gene_food_sense = max(0.6, min(1.4, base_gene_food_sense))
+        self.gene_phero_sense = max(0.6, min(1.4, base_gene_phero_sense))
+        self.gene_reproduction_energy = max(120.0, min(280.0, base_gene_reproduction_energy))
+
         self.genome = {
-            "speed": float(
-                inherited_genes.get("speed", inherited_genes.get("gene_speed", random.uniform(0.9, 1.1)))
-            ),
+            "speed": self.gene_speed,
             "turn_bias": float(
                 inherited_genes.get("turn_bias", inherited_genes.get("gene_turn_bias", random.uniform(0.9, 1.1)))
             ),
-            "food_sense": float(
-                inherited_genes.get("food_sense", inherited_genes.get("gene_food_weight", random.uniform(0.9, 1.1)))
-            ),
-            "pheromone_sense": float(
-                inherited_genes.get(
-                    "pheromone_sense",
-                    inherited_genes.get("gene_pheromone_weight", random.uniform(0.9, 1.1)),
-                )
-            ),
+            "food_sense": self.gene_food_sense,
+            "pheromone_sense": self.gene_phero_sense,
             "energy_efficiency": float(inherited_genes.get("energy_efficiency", random.uniform(0.9, 1.1))),
+            "reproduction_energy": self.gene_reproduction_energy,
         }
 
-        for key in self.genome:
-            self.genome[key] = max(0.75, min(1.25, self.genome[key]))
+        self.genome["speed"] = max(0.6, min(1.4, self.genome["speed"]))
+        self.genome["food_sense"] = max(0.6, min(1.4, self.genome["food_sense"]))
+        self.genome["pheromone_sense"] = max(0.6, min(1.4, self.genome["pheromone_sense"]))
+        self.genome["turn_bias"] = max(0.75, min(1.25, self.genome["turn_bias"]))
+        self.genome["energy_efficiency"] = max(0.75, min(1.25, self.genome["energy_efficiency"]))
+        self.genome["reproduction_energy"] = self.gene_reproduction_energy
 
         # Evolution genes
         self.gene_speed = self.genome["speed"]
         self.gene_turn_bias = self.genome["turn_bias"]
-        self.gene_food_weight = self.genome["food_sense"]
-        self.gene_pheromone_weight = self.genome["pheromone_sense"]
-        self.gene_reproduction_energy = 160.0 / max(0.7, self.genome["energy_efficiency"])
+        self.gene_food_sense = self.genome["food_sense"]
+        self.gene_phero_sense = self.genome["pheromone_sense"]
+        self.gene_food_weight = self.gene_food_sense
+        self.gene_pheromone_weight = self.gene_phero_sense
+        self.gene_reproduction_energy = self.genome["reproduction_energy"]
 
         if genes is None:
             genes = {
@@ -223,27 +251,27 @@ class Worm:
             self.size = max(self.size, target_size)
 
     def _build_mutated_child_genes(self):
-        mutation_rate = 0.02
+        child_gene_speed = max(0.6, min(1.4, self.gene_speed * random.uniform(0.95, 1.05)))
+        child_gene_food_sense = max(0.6, min(1.4, self.gene_food_sense * random.uniform(0.95, 1.05)))
+        child_gene_phero_sense = max(0.6, min(1.4, self.gene_phero_sense * random.uniform(0.95, 1.05)))
+        child_gene_reproduction_energy = max(
+            120.0,
+            min(280.0, self.gene_reproduction_energy * random.uniform(0.95, 1.05)),
+        )
+
         child_genes = {
-            "speed": self.genome["speed"],
+            "gene_speed": child_gene_speed,
+            "gene_food_sense": child_gene_food_sense,
+            "gene_phero_sense": child_gene_phero_sense,
+            "gene_reproduction_energy": child_gene_reproduction_energy,
+            "speed": child_gene_speed,
+            "food_sense": child_gene_food_sense,
+            "pheromone_sense": child_gene_phero_sense,
+            "reproduction_energy": child_gene_reproduction_energy,
             "turn_bias": self.genome["turn_bias"],
-            "food_sense": self.genome["food_sense"],
-            "pheromone_sense": self.genome["pheromone_sense"],
             "energy_efficiency": self.genome["energy_efficiency"],
             "generation": self.generation + 1,
         }
-
-        child_genes["speed"] += random.gauss(0.0, mutation_rate)
-        child_genes["turn_bias"] += random.gauss(0.0, mutation_rate)
-        child_genes["food_sense"] += random.gauss(0.0, mutation_rate)
-        child_genes["pheromone_sense"] += random.gauss(0.0, mutation_rate)
-        child_genes["energy_efficiency"] += random.gauss(0.0, mutation_rate)
-
-        child_genes["speed"] = max(0.75, min(1.25, child_genes["speed"]))
-        child_genes["turn_bias"] = max(0.75, min(1.25, child_genes["turn_bias"]))
-        child_genes["food_sense"] = max(0.75, min(1.25, child_genes["food_sense"]))
-        child_genes["pheromone_sense"] = max(0.75, min(1.25, child_genes["pheromone_sense"]))
-        child_genes["energy_efficiency"] = max(0.75, min(1.25, child_genes["energy_efficiency"]))
         return child_genes
 
     def update(self, world, dt=1 / 60, new_worms=None, new_eggs=None):
@@ -299,18 +327,21 @@ class Worm:
         adaptation_scale = 1.0 + self.food_adaptation
 
         food_turn = ((left_food - right_food) / adaptation_scale) * 0.05
-        food_turn *= self.genome["food_sense"]
+        food_turn *= self.gene_food_sense
 
         pher_left = world.get_pheromone(*left_sensor_pos)
         pher_right = world.get_pheromone(*right_sensor_pos)
         pher_gradient = pher_right - pher_left
-        pheromone_turn = pher_gradient * 0.3
-        pheromone_turn *= self.genome["pheromone_sense"]
+        pheromone_signal = pher_gradient
+        pheromone_signal *= self.gene_phero_sense
+        pheromone_turn = pheromone_signal * 0.3
+        pheromone_signal_here = pheromone_here * self.gene_phero_sense
 
         sensory_food_signal = ((food_here + left_food + right_food) / 3.0) / adaptation_scale
         food_gradient = sensory_food_signal - self.prev_food_signal
         food_signal = food_here + food_gradient
         food_signal /= adaptation_scale
+        food_signal *= self.gene_food_sense
         gradient_change = food_signal - self.prev_food_signal
         self.prev_food_signal = food_signal
 
@@ -334,7 +365,7 @@ class Worm:
         self.neurons["AWA"] = food_signal
         self.neurons["ASH"] = collision_signal
 
-        if (not self.dauer) and food_here < 0.05 and pheromone_here > 0.2 and self.energy < 80:
+        if (not self.dauer) and food_here < 0.05 and pheromone_signal_here > 0.2 and self.energy < 80:
             self.dauer = True
             self.stage = "dauer"
             self.size = min(self.size, 0.35)
@@ -361,7 +392,7 @@ class Worm:
         else:
             self.direction = 1
 
-        turn_bias = self.neurons["ASE"] * 0.4 + pheromone_here * 0.2
+        turn_bias = self.neurons["ASE"] * 0.4 + pheromone_signal_here * 0.2
 
         self.run_timer += dt
         if self.state == "RUN":
@@ -381,7 +412,7 @@ class Worm:
         elif food_signal < 0.3:
             self.behavior = "roam"
 
-        stress_target = max(0.0, min(1.0, pheromone_here / 2.0 - food_signal * 0.2))
+        stress_target = max(0.0, min(1.0, pheromone_signal_here / 2.0 - food_signal * 0.2))
         liquid_level = world.sample_medium(self.x, self.y)
         self.gene_expression["stress"] += (stress_target - self.gene_expression["stress"]) * 0.08
         self.gene_expression["liquid"] += (liquid_level - self.gene_expression["liquid"]) * 0.08
@@ -427,7 +458,7 @@ class Worm:
             self.angle += random.uniform(-0.25, 0.25)
 
         random_turn = random.uniform(-0.02, 0.02)
-        if pheromone_here > 0.25:
+        if pheromone_signal_here > 0.25:
             random_turn *= 0.3
         if self.dauer:
             random_turn *= 2.0
@@ -503,7 +534,7 @@ class Worm:
             forward_drive = self.neurons["AVB"]
             target_speed = BASE_SPEED * (0.6 + forward_drive)
             target_speed *= (0.7 + serotonin * 0.6)
-            target_speed *= self.genome["speed"]
+            target_speed *= self.gene_speed
             if pheromone_here > 0.25:
                 target_speed *= 0.8
             if self.dauer:
@@ -606,15 +637,21 @@ class Worm:
                 cy = max(0.0, min(WORLD_SIZE, cy))
                 self.body[i] = (cx, cy)
 
+        gx = int(self.x / WORLD_SIZE * GRID_SIZE)
+        gy = int(self.y / WORLD_SIZE * GRID_SIZE)
+
         efficiency = max(0.6, self.genome["energy_efficiency"])
         energy_loss = (0.02 / efficiency) * dt
+        density = 0.0
+        if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
+            density = float(world.worm_density[gx, gy])
+        if density > 0.02:
+            energy_loss *= (1.0 + density * 5.0)
         if self.dauer:
             energy_loss *= 0.1
 
         self.energy -= energy_loss
 
-        gx = int(self.x / WORLD_SIZE * GRID_SIZE)
-        gy = int(self.y / WORLD_SIZE * GRID_SIZE)
         food_eaten = 0.0
 
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
@@ -664,9 +701,6 @@ class Worm:
 
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
             world.pheromone[gx, gy] += 0.05
-
-        if local_density > 20:
-            self.energy -= 0.2 * dt
 
         if (not self.dauer) and self.stage == "adult" and self.energy > self.gene_reproduction_energy and self.repro_timer <= 0:
             persistence = random.uniform(0.20, 0.34)

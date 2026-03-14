@@ -257,13 +257,13 @@ while running:
             if getattr(worm, "dauer", False):
                 color = (0.35, 0.55, 1.0)
             else:
-                speed_t = max(0.0, min((worm.genome["speed"] - 0.8) / 0.4, 1.0))
-                food_t = max(0.0, min((worm.genome["food_sense"] - 0.8) / 0.4, 1.0))
-                pher_t = max(0.0, min((worm.genome["pheromone_sense"] - 0.8) / 0.4, 1.0))
+                speed_t = max(0.0, min(1.0, worm.gene_speed))
+                food_t = max(0.0, min(1.0, worm.gene_food_sense))
+                pher_t = max(0.0, min(1.0, worm.gene_phero_sense))
                 color = (
-                    0.2 + 0.8 * speed_t,
-                    0.2 + 0.8 * food_t,
-                    0.2 + 0.8 * pher_t,
+                    speed_t,
+                    food_t,
+                    pher_t,
                 )
 
             max_gap = SEGMENT_LENGTH * 2.0
