@@ -76,7 +76,7 @@ class World:
         ) / 4
         self.food += 0.02 * (food_diffusion - self.food) * time_scale
         self.food *= 0.999 ** time_scale
-        self.food += 0.01 * self.food_capacity * time_scale
+        self.food += 0.0075 * self.food_capacity * time_scale
         np.clip(self.food, 0.0, 1.0, out=self.food)
         self.oxygen = 1.0 - (self.food * 0.3)
         np.clip(self.oxygen, 0.0, 1.0, out=self.oxygen)

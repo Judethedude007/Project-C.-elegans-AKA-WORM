@@ -607,7 +607,7 @@ class Worm:
                 self.body[i] = (cx, cy)
 
         efficiency = max(0.6, self.genome["energy_efficiency"])
-        energy_loss = (0.015 / efficiency) * dt
+        energy_loss = (0.02 / efficiency) * dt
         if self.dauer:
             energy_loss *= 0.1
 
@@ -700,7 +700,7 @@ class Worm:
                 new_worms.append(baby)
             else:
                 return True
-            self.energy -= 80
+            self.energy -= 60
             self.repro_timer = 30.0
 
         self.energy = max(0.0, self.energy)
