@@ -1,4 +1,5 @@
 import random
+import math
 import numpy as np
 import pygame
 
@@ -58,6 +59,66 @@ follow_mode = True
 births_per_sec = 0.0
 deaths_per_sec = 0.0
 view_mode = 0
+
+
+def split_by_gap(points, max_gap):
+    strips = []
+    current_strip = []
+    prev = None
+
+    for p in points:
+        if prev is not None:
+            dx = p[0] - prev[0]
+            dy = p[1] - prev[1]
+            if math.sqrt(dx * dx + dy * dy) > max_gap:
+                if len(current_strip) >= 2:
+                    strips.append(current_strip)
+                current_strip = []
+
+        current_strip.append(p)
+        prev = p
+
+    if len(current_strip) >= 2:
+        strips.append(current_strip)
+
+    return strips
+
+
+def build_tapered_mesh(points, base_width):
+    n = len(points)
+    if n < 2:
+        return np.empty((0, 2), dtype="f4")
+
+    mesh = []
+    denom = max(1, n - 1)
+
+    for i, p in enumerate(points):
+        if i == 0:
+            tx = points[1][0] - p[0]
+            ty = points[1][1] - p[1]
+        elif i == n - 1:
+            tx = p[0] - points[i - 1][0]
+            ty = p[1] - points[i - 1][1]
+        else:
+            tx = points[i + 1][0] - points[i - 1][0]
+            ty = points[i + 1][1] - points[i - 1][1]
+
+        tlen = math.sqrt(tx * tx + ty * ty)
+        if tlen < 1e-9:
+            continue
+
+        nx = -ty / tlen
+        ny = tx / tlen
+
+        u = i / float(denom)
+        width_profile = 1.0 - abs(u - 0.5) * 1.5
+        width_profile = max(0.22, width_profile)
+        width = base_width * width_profile
+
+        mesh.append((p[0] + nx * width, p[1] + ny * width))
+        mesh.append((p[0] - nx * width, p[1] - ny * width))
+
+    return np.array(mesh, dtype="f4") if mesh else np.empty((0, 2), dtype="f4")
 
 while running:
 
@@ -174,7 +235,7 @@ while running:
     head_positions = []
 
     for worm in worms:
-        points = worm.smooth_body()
+        points = worm.body_points()
         if points:
             if getattr(worm, "dauer", False):
                 color = (0.35, 0.55, 1.0)
@@ -188,33 +249,30 @@ while running:
                     0.2 + 0.8 * speed_t,
                 )
 
-            strips = []
-            current_strip = []
-            prev = None
             max_gap = SEGMENT_LENGTH * 2.0
-
-            for p in points:
-                if prev is not None:
-                    dx = p[0] - prev[0]
-                    dy = p[1] - prev[1]
-                    if (dx * dx + dy * dy) ** 0.5 > max_gap:
-                        if len(current_strip) >= 2:
-                            strips.append(current_strip)
-                        current_strip = []
-
-                x = (p[0] / WORLD_SIZE) * world_scale
-                y = (p[1] / WORLD_SIZE) * world_scale
-                current_strip.append([x, y])
-                prev = p
-
-            if len(current_strip) >= 2:
-                strips.append(current_strip)
+            strips = split_by_gap(points, max_gap)
 
             for strip in strips:
-                worm_strips.append((np.array(strip, dtype="f4"), color))
+                strip_norm = [
+                    ((p[0] / WORLD_SIZE) * world_scale, (p[1] / WORLD_SIZE) * world_scale)
+                    for p in strip
+                ]
+
+                base_width_world = max(0.9, SEGMENT_LENGTH * max(worm.size, 0.2) * 0.6)
+                base_width_norm = (base_width_world / WORLD_SIZE) * world_scale
+                mesh = build_tapered_mesh(strip_norm, base_width_norm)
+                if len(mesh) >= 4:
+                    worm_strips.append((mesh, color, "triangle_strip"))
+                else:
+                    worm_strips.append((np.array(strip_norm, dtype="f4"), color, "line_strip"))
 
             if strips:
-                head_positions.append(strips[0][0])
+                head_positions.append(
+                    [
+                        (strips[0][0][0] / WORLD_SIZE) * world_scale,
+                        (strips[0][0][1] / WORLD_SIZE) * world_scale,
+                    ]
+                )
 
     food_low = []
     food_mid = []

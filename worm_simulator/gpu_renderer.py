@@ -103,9 +103,19 @@ class GPURenderer:
 
         for worm_strip in worm_strips:
             if isinstance(worm_strip, tuple):
-                vertices, color = worm_strip
+                if len(worm_strip) == 3:
+                    vertices, color, mode_name = worm_strip
+                else:
+                    vertices, color = worm_strip
+                    mode_name = "line_strip"
             else:
                 vertices, color = worm_strip, (1.0, 1.0, 1.0)
-            self._render_vertices(vertices, color, moderngl.LINE_STRIP)
+                mode_name = "line_strip"
+
+            mode = moderngl.LINE_STRIP
+            if mode_name == "triangle_strip":
+                mode = moderngl.TRIANGLE_STRIP
+
+            self._render_vertices(vertices, color, mode)
 
         self._render_vertices(head_positions, (1.0, 0.25, 0.25), moderngl.POINTS)

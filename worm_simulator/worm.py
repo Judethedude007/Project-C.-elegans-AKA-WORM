@@ -8,7 +8,7 @@ METABOLISM = 0.3
 MOVE_COST = 0.2
 AGE_LIMIT = 5000
 REPRODUCTION_COST = 2000
-SEGMENTS = 16
+SEGMENTS = 24
 BASE_SEGMENT_LENGTH = 5
 SEGMENT_LENGTH = BASE_SEGMENT_LENGTH
 STIFFNESS = 0.25
@@ -18,6 +18,9 @@ SENSOR_DISTANCE = 25
 GROUND_FRICTION = 0.82
 SEGMENT_SPRING = 8.0
 MUSCLE_FORCE = 3.0
+WAVE_AMPLITUDE = 0.35
+WAVE_FREQUENCY = 1.2
+WAVE_SPACING = 0.45
 
 
 def sample_chem(env, x, y):
@@ -411,19 +414,33 @@ class Worm:
         self.direction_y = math.sin(self.angle)
 
         wave_dir = 1.0 if self.direction >= 0 else -1.0
-        self.wave_phase += dt * (3.0 + self.neurons["AVB"] * 2.0) * wave_dir
+        wave_drive = 0.75 + self.neurons["AVB"] * 0.65
+        self.wave_phase += dt * math.tau * WAVE_FREQUENCY * wave_drive * wave_dir
 
         for i in range(SEGMENTS):
-            phase = self.wave_phase - i * 0.5
-            bend = math.sin(phase) * 0.4
+            phase = self.wave_phase - i * WAVE_SPACING
+            bend = math.sin(phase) * WAVE_AMPLITUDE
             self.segment_angle[i] = bend
             self.muscle_left[i] = max(0.0, bend)
             self.muscle_right[i] = max(0.0, -bend)
 
+        head_bias = self.angular_velocity * 0.4
+        self.segment_angle[0] += head_bias
+        if SEGMENTS > 1:
+            self.segment_angle[1] += head_bias * 0.6
+        self.segment_angle[0] = max(-0.7, min(0.7, self.segment_angle[0]))
+        if SEGMENTS > 1:
+            self.segment_angle[1] = max(-0.7, min(0.7, self.segment_angle[1]))
+        self.muscle_left[0] = max(0.0, self.segment_angle[0])
+        self.muscle_right[0] = max(0.0, -self.segment_angle[0])
+        if SEGMENTS > 1:
+            self.muscle_left[1] = max(0.0, self.segment_angle[1])
+            self.muscle_right[1] = max(0.0, -self.segment_angle[1])
+
         wave_strength = 0
 
         for i in range(SEGMENTS):
-            wave_strength += abs(self.muscle_left[i] - self.muscle_right[i])
+            wave_strength += abs(self.segment_angle[i])
 
         wave_strength /= SEGMENTS
 
@@ -496,7 +513,7 @@ class Worm:
             seg_vx += -(dx / dist) * stretch * SEGMENT_SPRING * dt
             seg_vy += -(dy / dist) * stretch * SEGMENT_SPRING * dt
 
-            bend = self.muscle_left[i] - self.muscle_right[i]
+            bend = self.segment_angle[i]
             nx = -dy / dist
             ny = dx / dist
             seg_vx += nx * bend * MUSCLE_FORCE * dt
@@ -692,7 +709,7 @@ class Worm:
             strips.append(current_strip)
 
         smooth_points = []
-        interpolation_steps = 3
+        interpolation_steps = 4
 
         for strip in strips:
             if len(strip) < 4:
@@ -707,8 +724,10 @@ class Worm:
                 p3 = padded[i + 2]
 
                 smooth_points.append(p1)
-                for step in range(1, interpolation_steps + 1):
-                    t = step / float(interpolation_steps + 1)
+                for step in range(interpolation_steps):
+                    t = step / float(interpolation_steps - 1)
+                    if t <= 0.0:
+                        continue
                     smooth_points.append(catmull_rom(p0, p1, p2, p3, t))
 
             smooth_points.append(strip[-1])
