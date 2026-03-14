@@ -19,15 +19,23 @@ class World:
 
         self._world_to_food_idx = np.linspace(0, GRID_SIZE - 1, WORLD_SIZE).astype(np.int32)
 
-        for _ in range(10):
-            gx = random.randint(0, GRID_SIZE - 1)
-            gy = random.randint(0, GRID_SIZE - 1)
-            self._add_food_cluster(gx, gy, radius=10, amount=2.0)
+        for _ in range(6):
+            cx = random.randint(100, WORLD_SIZE - 100)
+            cy = random.randint(100, WORLD_SIZE - 100)
+            self._add_food_gaussian(cx, cy)
 
         for _ in range(5):
             gx = random.randint(0, GRID_SIZE - 1)
             gy = random.randint(0, GRID_SIZE - 1)
             self._add_medium_patch(gx, gy, radius=8, value=1.0)
+
+    def _add_food_gaussian(self, cx_world, cy_world, std=40, n=3000):
+        xs = np.random.normal(cx_world, std, n).astype(int)
+        ys = np.random.normal(cy_world, std, n).astype(int)
+        mask = (xs >= 0) & (xs < WORLD_SIZE) & (ys >= 0) & (ys < WORLD_SIZE)
+        gxs = (xs[mask] * GRID_SIZE // WORLD_SIZE).clip(0, GRID_SIZE - 1)
+        gys = (ys[mask] * GRID_SIZE // WORLD_SIZE).clip(0, GRID_SIZE - 1)
+        np.add.at(self.food, (gxs, gys), 1)
 
     def _add_food_cluster(self, cx, cy, radius=10, amount=2.0):
         for dx in range(-radius, radius + 1):
@@ -59,9 +67,9 @@ class World:
         self.food += 0.02 * (food_diffusion - self.food)
 
         if random.random() < 0.02:
-            cx = random.randint(0, GRID_SIZE - 1)
-            cy = random.randint(0, GRID_SIZE - 1)
-            self._add_food_cluster(cx, cy, radius=10, amount=2.0)
+            cx = random.randint(100, WORLD_SIZE - 100)
+            cy = random.randint(100, WORLD_SIZE - 100)
+            self._add_food_gaussian(cx, cy)
 
         np.clip(self.food, 0.0, 100.0, out=self.food)
 
@@ -89,7 +97,7 @@ class World:
             print("chem max:", max_val)
 
         # Pheromone decays slowly over time.
-        self.pheromone[1:-1, 1:-1] *= 0.97
+        self.pheromone *= 0.995
         np.clip(self.pheromone, 0.0, 1000.0, out=self.pheromone)
 
     def get_food(self, x, y):

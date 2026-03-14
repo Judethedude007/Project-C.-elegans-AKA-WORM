@@ -309,6 +309,17 @@ while running:
                     radius,
                 )
 
+        # draw eggs as small red circles
+        for egg in eggs:
+            egg_norm_x = (egg.x / WORLD_SIZE) * world_scale
+            egg_norm_y = (egg.y / WORLD_SIZE) * world_scale
+            clip_x = (egg_norm_x - camera_norm_x) * zoom
+            clip_y = (egg_norm_y - camera_norm_y) * zoom
+            sx = (clip_x * 0.5 + 0.5) * SCREEN_WIDTH
+            sy = (0.5 - clip_y * 0.5) * SCREEN_HEIGHT
+            if 0 <= sx < SCREEN_WIDTH and 0 <= sy < SCREEN_HEIGHT:
+                pygame.draw.circle(screen, (255, 80, 80), (int(sx), int(sy)), 2)
+
     avg_energy = (sum(w.energy for w in worms) / len(worms)) if worms else 0.0
     total_food = float(np.sum(world.food))
     total_pheromone = float(np.sum(world.pheromone))

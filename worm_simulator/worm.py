@@ -32,7 +32,7 @@ class Egg:
     def __init__(self, x, y, inherited_expression=None):
         self.x = x % WORLD_SIZE
         self.y = y % WORLD_SIZE
-        self.timer = 5.0
+        self.timer = 8.0
         if inherited_expression is None:
             inherited_expression = {
                 "foraging": 1.0,
@@ -70,6 +70,7 @@ class Worm:
         self.stage = "L1"
         self.locomotion_mode = "crawl"
         self.prev_food_signal = 0.0
+        self.repro_timer = 0.0
 
         if genes is None:
             genes = {
@@ -152,6 +153,7 @@ class Worm:
         self.time += dt
         self.neural_phase += dt * 3.0
         self.age += dt
+        self.repro_timer -= dt
         self._update_stage()
         segment_length = BASE_SEGMENT_LENGTH * self.size
 
@@ -266,17 +268,20 @@ class Worm:
         turn = max(-MAX_TURN, min(MAX_TURN, turn))
 
         if food_gradient < 0 and random.random() < 0.02:
-            self.angle += random.uniform(-1.0, 1.0)
+            self.angle += random.uniform(-0.3, 0.3)
 
-        noise_turn = random.uniform(-0.01, 0.01)
-        self.angular_velocity = (
+        random_turn = random.uniform(-0.02, 0.02)
+        turn_combined = (
             0.6 * food_turn
-            + 0.3 * (pheromone_turn + turn)
-            + 0.1 * noise_turn
+            + 0.25 * pheromone_turn
+            + 0.15 * random_turn
         )
-        self.angular_velocity += neural_turn
+        self.angular_velocity *= 0.75
+        if abs(turn_combined) < 0.01:
+            self.angular_velocity *= 0.6
+        self.angular_velocity += turn_combined
 
-        margin = 30
+        margin = 40
         if self.x < margin:
             self.angular_velocity += 0.05
         if self.x > world.width - margin:
@@ -286,14 +291,13 @@ class Worm:
         if self.y > world.height - margin:
             self.angular_velocity -= 0.05
 
-        self.angular_velocity = max(-0.2, min(0.2, self.angular_velocity))
+        self.angular_velocity = max(-0.12, min(0.12, self.angular_velocity))
         self.angle += self.angular_velocity * dt * 60
 
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
 
-        self.energy -= self.genes["metabolism"] * dt * 0.7
-        self.energy -= 0.01 * dt
+        self.energy -= 0.02 * dt
 
         self.body[0] = (self.x, self.y)
         self.vel[0] = (0.0, 0.0)
@@ -346,42 +350,10 @@ class Worm:
 
         wave_strength /= SEGMENTS
 
-        speed = self.speed * self.genes["speed"] * 1.2
+        speed = 40.0  # world pixels per second
 
-        if self.locomotion_mode == "swim":
-            speed *= 1.5
-        else:
-            speed *= 1.0
-
-        if eating:
-            speed *= 0.65
-
-        if self.behavior == "dwell":
-            speed *= 0.6
-        else:
-            speed *= 1.0
-
-        speed *= self.gene_expression["foraging"]
-
-        if self.stage == "dauer":
-            speed *= 0.35
-
-        forward_speed = speed * dt * 30
-
-        max_step = 2.0
-
-        dx = math.cos(self.angle) * forward_speed
-        dy = math.sin(self.angle) * forward_speed
-
-        step = math.sqrt(dx * dx + dy * dy)
-
-        if step > max_step:
-            scale = max_step / step
-            dx *= scale
-            dy *= scale
-
-        self.x += dx
-        self.y += dy
+        self.x += math.cos(self.angle) * speed * dt
+        self.y += math.sin(self.angle) * speed * dt
 
         self.x = max(0, min(WORLD_SIZE, self.x))
         self.y = max(0, min(WORLD_SIZE, self.y))
@@ -402,6 +374,7 @@ class Worm:
                 eating = True
 
         self.size += 0.002 * food_eaten
+        self.size += 0.0005 * dt
         self.size = min(self.size, 1.0)
         segment_length = BASE_SEGMENT_LENGTH * self.size
 
@@ -453,9 +426,9 @@ class Worm:
                 self.vel[i] = (0.0, 0.0)
 
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
-            world.pheromone[gx, gy] += 0.08
+            world.pheromone[gx, gy] += 0.05
 
-        if self.stage == "adult" and self.energy > 100 and self.size > 0.75:
+        if self.stage == "adult" and self.energy > 120 and self.repro_timer <= 0:
             persistence = random.uniform(0.20, 0.34)
             inherited_expression = {
                 "foraging": (1.0 - persistence) * 1.0 + persistence * self.gene_expression["foraging"],
@@ -478,7 +451,8 @@ class Worm:
                 new_worms.append(baby)
             else:
                 return True
-            self.energy *= 0.5
+            self.energy -= 30
+            self.repro_timer = 30.0
 
         self.energy = max(0.0, self.energy)
 
