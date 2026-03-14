@@ -977,8 +977,8 @@ class Worm:
         return smooth_points
 
     def body_points(self):
-        growth = min(1.0, self.age / 40.0)
-        body_length = BASE_LENGTH * (0.4 + 0.6 * growth)
+        growth = min(1.0, self.age / 20.0)
+        body_length = BASE_LENGTH * (0.5 + 0.5 * growth)
         visible_ratio = max(0.1, min(1.0, body_length / BASE_LENGTH))
         visible_segments = max(2, min(self.segments, int(round(self.segments * visible_ratio))))
         return self.smooth_body(points=self.body[:visible_segments])

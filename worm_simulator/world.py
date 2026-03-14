@@ -31,6 +31,13 @@ class World:
             self._add_food_gaussian(cx, cy, 120, 80)
             self.food_patches.append({"x": cx, "y": cy})
 
+        if self.food_patches:
+            self.food_center_x = float(sum(p["x"] for p in self.food_patches) / len(self.food_patches))
+            self.food_center_y = float(sum(p["y"] for p in self.food_patches) / len(self.food_patches))
+        else:
+            self.food_center_x = WORLD_SIZE * 0.5
+            self.food_center_y = WORLD_SIZE * 0.5
+
         np.clip(self.food, 0.0, 1.0, out=self.food)
         self.food_capacity[:] = self.food
         self.oxygen = 1.0 - (self.food * 0.3)

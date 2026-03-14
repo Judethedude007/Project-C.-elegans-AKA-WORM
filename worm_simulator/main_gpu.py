@@ -17,13 +17,15 @@ from worm import Worm, Egg, SEGMENTS, SEGMENT_LENGTH
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_SIZE, INITIAL_WORMS, MAX_WORMS
 from gpu_renderer import GPURenderer
 
-ZOOM_MIN = 0.5
+ZOOM_MIN = 1.0
 ZOOM_MAX = 20.0
 CAMERA_STEP = 12.0
-WORM_THICKNESS_SCALE = 2.0 / 3.0
+DEFAULT_ZOOM = 2.0
+WORM_THICKNESS_SCALE = 2.0
 TARGET_FPS = 60
 FIXED_DT = 1.0 / 60.0
 RENDER_GRID_STEP = 4
+DEBUG_VISIBILITY_LOG_INTERVAL = 1.0
 
 pygame.init()
 
@@ -42,10 +44,11 @@ else:
 
 world = World()
 worms = []
+spawn_center_x = float(getattr(world, "food_center_x", WORLD_SIZE * 0.5))
+spawn_center_y = float(getattr(world, "food_center_y", WORLD_SIZE * 0.5))
 for _ in range(INITIAL_WORMS):
-    patch = random.choice(world.food_patches)
-    x = patch["x"] + random.uniform(-15.0, 15.0)
-    y = patch["y"] + random.uniform(-15.0, 15.0)
+    x = spawn_center_x + random.uniform(-20.0, 20.0)
+    y = spawn_center_y + random.uniform(-20.0, 20.0)
     x = max(0.0, min(x, WORLD_SIZE - 1.0))
     y = max(0.0, min(y, WORLD_SIZE - 1.0))
     worms.append(Worm(x, y, inherited_genes={"generation": 0}))
@@ -64,7 +67,7 @@ avg_y = sum(w.y for w in worms) / len(worms) if worms else 0.0
 
 camera_x = avg_x
 camera_y = avg_y
-zoom = 10.0
+zoom = DEFAULT_ZOOM
 
 follow_index = 0
 follow_mode = True
@@ -74,6 +77,7 @@ total_births = 0
 total_deaths = 0
 max_generation = 0
 view_mode = 0
+debug_log_timer = 0.0
 
 
 def split_by_gap(points, max_gap):
@@ -263,6 +267,11 @@ while running:
     births_per_sec = births_per_sec * 0.9 + instant_births * 0.1
     deaths_per_sec = deaths_per_sec * 0.9 + instant_deaths * 0.1
 
+    debug_log_timer += frame_time
+    if debug_log_timer >= DEBUG_VISIBILITY_LOG_INTERVAL:
+        print(f"worms: {len(worms)} zoom: {zoom:.2f}")
+        debug_log_timer = 0.0
+
     for worm in worms:
         if len(worm.body) == 0:
             continue
@@ -274,10 +283,14 @@ while running:
             worm.body = [(worm.x, worm.y) for _ in range(SEGMENTS)]
             worm.vel = [(0.0, 0.0) for _ in range(SEGMENTS)]
 
-    if follow_mode and worms:
-        target = worms[follow_index % len(worms)]
-        camera_x = target.x
-        camera_y = target.y
+    if worms:
+        if follow_mode:
+            target = worms[follow_index % len(worms)]
+            camera_x = target.x
+            camera_y = target.y
+        else:
+            camera_x = sum(w.x for w in worms) / len(worms)
+            camera_y = sum(w.y for w in worms) / len(worms)
 
     camera_x = max(0.0, min(camera_x, float(WORLD_SIZE)))
     camera_y = max(0.0, min(camera_y, float(WORLD_SIZE)))
@@ -302,7 +315,11 @@ while running:
                     for p in strip
                 ]
 
-                base_width_world = max(0.6, SEGMENT_LENGTH * max(worm.size, 0.2) * 0.6 * WORM_THICKNESS_SCALE)
+                zoom_visibility_boost = max(1.0, 2.0 / max(zoom, 1e-3))
+                base_width_world = max(
+                    2.0,
+                    SEGMENT_LENGTH * max(worm.size, 0.2) * WORM_THICKNESS_SCALE * zoom_visibility_boost,
+                )
                 base_width_norm = (base_width_world / WORLD_SIZE) * world_scale
                 mesh = build_tapered_mesh(strip_norm, base_width_norm)
                 if len(mesh) >= 4:
@@ -441,6 +458,14 @@ while running:
                     (255, 120, 120),
                     (int(hx), int(hy)),
                     radius,
+                )
+                # Optional high-contrast marker so worms stay easy to track.
+                pygame.draw.circle(
+                    screen,
+                    (255, 255, 255),
+                    (int(hx), int(hy)),
+                    max(2, int(3 * zoom)),
+                    1,
                 )
 
         # draw eggs as small red circles
