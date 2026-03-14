@@ -32,7 +32,7 @@ class Egg:
     def __init__(self, x, y, inherited_expression=None):
         self.x = x % WORLD_SIZE
         self.y = y % WORLD_SIZE
-        self.timer = 8.0
+        self.timer = random.uniform(20.0, 40.0)
         if inherited_expression is None:
             inherited_expression = {
                 "foraging": 1.0,
@@ -62,15 +62,16 @@ class Worm:
         self.direction_y = math.sin(self.angle)
         self.vx = 0.0
         self.vy = 0.0
-        self.speed = random.uniform(0.8, 1.2)
+        self.speed = 40.0
         self.syn_left = 0.5
         self.syn_right = 0.5
-        self.size = 0.2
+        self.size = 0.3
         self.behavior = "roam"
         self.stage = "L1"
         self.locomotion_mode = "crawl"
         self.prev_food_signal = 0.0
         self.repro_timer = 0.0
+        self.run_timer = random.uniform(2.0, 6.0)
 
         if genes is None:
             genes = {
@@ -211,6 +212,15 @@ class Worm:
         food_gradient = food_signal - self.prev_food_signal
         self.prev_food_signal = food_signal
 
+        self.run_timer -= dt
+        if food_gradient > 0:
+            self.run_timer += 0.5
+        elif food_gradient < 0:
+            self.run_timer -= 0.5
+        if self.run_timer <= 0:
+            self.angle += random.uniform(-0.6, 0.6)
+            self.run_timer = random.uniform(2.0, 6.0)
+
         if food_here > 0.8:
             eating = True
 
@@ -350,10 +360,11 @@ class Worm:
 
         wave_strength /= SEGMENTS
 
-        speed = 40.0  # world pixels per second
+        target_speed = 40.0
+        self.speed = 0.9 * self.speed + 0.1 * target_speed
 
-        self.x += math.cos(self.angle) * speed * dt
-        self.y += math.sin(self.angle) * speed * dt
+        self.x += math.cos(self.angle) * self.speed * dt
+        self.y += math.sin(self.angle) * self.speed * dt
 
         self.x = max(0, min(WORLD_SIZE, self.x))
         self.y = max(0, min(WORLD_SIZE, self.y))
@@ -374,7 +385,7 @@ class Worm:
                 eating = True
 
         self.size += 0.002 * food_eaten
-        self.size += 0.0005 * dt
+        self.size += dt * 0.01
         self.size = min(self.size, 1.0)
         segment_length = BASE_SEGMENT_LENGTH * self.size
 
