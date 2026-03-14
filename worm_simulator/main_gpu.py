@@ -123,7 +123,12 @@ while running:
     active_eggs = []
     for egg in eggs:
         if egg.update(dt):
-            larva = Worm(egg.x, egg.y, inherited_expression=egg.inherited_expression)
+            larva = Worm(
+                egg.x,
+                egg.y,
+                inherited_expression=egg.inherited_expression,
+                inherited_genes=getattr(egg, "inherited_genes", None),
+            )
             larva.size = 0.3
             larva.energy = 40
             larva.age = 0
@@ -172,17 +177,17 @@ while running:
             y = (p[1] / WORLD_SIZE) * world_scale
             strip.append([x, y])
         if strip:
-            energy = worm.energy
             if getattr(worm, "dauer", False):
                 color = (0.35, 0.55, 1.0)
-            elif energy < 60.0:
-                t = max(0.0, min(energy / 60.0, 1.0))
-                color = (1.0, 0.2 + 0.8 * t, 0.2 + 0.8 * t)
-            elif energy > 140.0:
-                t = max(0.0, min((energy - 140.0) / 120.0, 1.0))
-                color = (1.0 - 0.6 * t, 1.0 - 0.3 * t, 1.0)
             else:
-                color = (1.0, 1.0, 1.0)
+                speed_t = max(0.0, min((worm.gene_speed - 0.5) / 1.0, 1.0))
+                food_t = max(0.0, min((worm.gene_food_weight - 0.5) / 1.0, 1.0))
+                repro_t = max(0.0, min((worm.gene_reproduction_energy - 180.0) / 40.0, 1.0))
+                color = (
+                    0.2 + 0.8 * repro_t,
+                    0.2 + 0.8 * food_t,
+                    0.2 + 0.8 * speed_t,
+                )
 
             worm_strips.append((np.array(strip, dtype="f4"), color))
             head_positions.append(strip[0])

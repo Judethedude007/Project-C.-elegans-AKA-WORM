@@ -29,7 +29,7 @@ def sample_chem(env, x, y):
 
 class Egg:
 
-    def __init__(self, x, y, inherited_expression=None):
+    def __init__(self, x, y, inherited_expression=None, inherited_genes=None):
         self.x = x % WORLD_SIZE
         self.y = y % WORLD_SIZE
         self.timer = random.uniform(20.0, 40.0)
@@ -40,6 +40,9 @@ class Egg:
                 "liquid": 0.0,
             }
         self.inherited_expression = dict(inherited_expression)
+        if inherited_genes is None:
+            inherited_genes = {}
+        self.inherited_genes = dict(inherited_genes)
 
     def update(self, dt):
         self.timer -= dt
@@ -48,7 +51,7 @@ class Egg:
 
 class Worm:
 
-    def __init__(self, x, y, genes=None, inherited_expression=None):
+    def __init__(self, x, y, genes=None, inherited_expression=None, inherited_genes=None):
 
         self.x = x
         self.y = y
@@ -80,6 +83,20 @@ class Worm:
         self.neuron_ava = 0.0
         self.syn_food = random.uniform(0.3, 0.7)
         self.syn_pheromone = random.uniform(0.3, 0.7)
+
+        if inherited_genes is None:
+            inherited_genes = {}
+
+        # Evolution genes
+        self.gene_speed = float(inherited_genes.get("gene_speed", random.uniform(0.8, 1.2)))
+        self.gene_turn_bias = float(inherited_genes.get("gene_turn_bias", random.uniform(0.8, 1.2)))
+        self.gene_food_weight = float(inherited_genes.get("gene_food_weight", random.uniform(0.8, 1.2)))
+        self.gene_pheromone_weight = float(
+            inherited_genes.get("gene_pheromone_weight", random.uniform(0.8, 1.2))
+        )
+        self.gene_reproduction_energy = float(
+            inherited_genes.get("gene_reproduction_energy", random.uniform(180.0, 220.0))
+        )
 
         if genes is None:
             genes = {
@@ -154,6 +171,28 @@ class Worm:
             self.stage = "L1"
             self.size = max(self.size, 0.2)
 
+    def _build_mutated_child_genes(self):
+        mutation_rate = 0.05
+        child_genes = {
+            "gene_speed": self.gene_speed,
+            "gene_turn_bias": self.gene_turn_bias,
+            "gene_food_weight": self.gene_food_weight,
+            "gene_pheromone_weight": self.gene_pheromone_weight,
+            "gene_reproduction_energy": self.gene_reproduction_energy,
+        }
+
+        child_genes["gene_speed"] += random.gauss(0.0, mutation_rate)
+        child_genes["gene_turn_bias"] += random.gauss(0.0, mutation_rate)
+        child_genes["gene_food_weight"] += random.gauss(0.0, mutation_rate)
+        child_genes["gene_pheromone_weight"] += random.gauss(0.0, mutation_rate)
+        child_genes["gene_reproduction_energy"] += random.gauss(0.0, 5.0)
+
+        child_genes["gene_speed"] = max(0.5, min(1.5, child_genes["gene_speed"]))
+        child_genes["gene_turn_bias"] = max(0.5, min(1.5, child_genes["gene_turn_bias"]))
+        child_genes["gene_food_weight"] = max(0.5, min(1.5, child_genes["gene_food_weight"]))
+        child_genes["gene_pheromone_weight"] = max(0.5, min(1.5, child_genes["gene_pheromone_weight"]))
+        return child_genes
+
     def update(self, world, dt=1 / 60, new_worms=None, new_eggs=None):
 
         if self.dead:
@@ -201,11 +240,13 @@ class Worm:
         )
 
         food_turn = (left_food - right_food) * 0.05
+        food_turn *= self.gene_food_weight
 
         pher_left = world.get_pheromone(*left_sensor_pos)
         pher_right = world.get_pheromone(*right_sensor_pos)
         pher_gradient = pher_right - pher_left
         pheromone_turn = pher_gradient * 0.3
+        pheromone_turn *= self.gene_pheromone_weight
 
         food_signal = (food_here + left_food + right_food) / 3.0
         food_gradient = food_signal - self.prev_food_signal
@@ -325,7 +366,7 @@ class Worm:
             self.angular_velocity *= 0.6
         self.angular_velocity += turn_combined
         self.angular_velocity += pheromone_turn
-        self.angular_velocity += turn_bias
+        self.angular_velocity += turn_bias * self.gene_turn_bias
 
         if self.x < margin:
             self.angular_velocity += 0.05
@@ -397,16 +438,17 @@ class Worm:
 
         target_speed = 40.0
         self.speed = 0.9 * self.speed + 0.1 * target_speed
+        move_speed = self.speed * self.gene_speed
         if pheromone_here > 0.25:
-            self.speed *= 0.8
+            move_speed *= 0.8
 
         energy_loss = 0.02 * dt
         if self.dauer:
-            self.speed *= 0.2
+            move_speed *= 0.2
             energy_loss *= 0.3
 
-        self.x += math.cos(self.angle) * self.speed * dt * self.direction
-        self.y += math.sin(self.angle) * self.speed * dt * self.direction
+        self.x += math.cos(self.angle) * move_speed * dt * self.direction
+        self.y += math.sin(self.angle) * move_speed * dt * self.direction
 
         self.energy -= energy_loss
 
@@ -487,22 +529,29 @@ class Worm:
         if local_density > 20:
             self.energy -= 0.2 * dt
 
-        if self.stage == "adult" and self.energy > 200 and self.repro_timer <= 0:
+        if self.stage == "adult" and self.energy > self.gene_reproduction_energy and self.repro_timer <= 0:
             persistence = random.uniform(0.20, 0.34)
             inherited_expression = {
                 "foraging": (1.0 - persistence) * 1.0 + persistence * self.gene_expression["foraging"],
                 "stress": (1.0 - persistence) * 0.0 + persistence * self.gene_expression["stress"],
                 "liquid": (1.0 - persistence) * 0.0 + persistence * self.gene_expression["liquid"],
             }
+            child_genes = self._build_mutated_child_genes()
             egg = Egg(
                 self.x + random.uniform(-5, 5),
                 self.y + random.uniform(-5, 5),
                 inherited_expression=inherited_expression,
+                inherited_genes=child_genes,
             )
             if new_eggs is not None:
                 new_eggs.append(egg)
             elif new_worms is not None:
-                baby = Worm(egg.x, egg.y, inherited_expression=egg.inherited_expression)
+                baby = Worm(
+                    egg.x,
+                    egg.y,
+                    inherited_expression=egg.inherited_expression,
+                    inherited_genes=egg.inherited_genes,
+                )
                 baby.size = 0.3
                 baby.energy = 40
                 baby.age = 0
