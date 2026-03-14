@@ -12,7 +12,7 @@ except Exception:
     IMGUI_AVAILABLE = False
 
 from world import World
-from worm import Worm, SEGMENTS
+from worm import Worm, Egg, SEGMENTS
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_SIZE
 from gpu_renderer import GPURenderer
 
@@ -36,6 +36,7 @@ else:
 
 world = World()
 worms = [Worm(random.uniform(0, WORLD_SIZE - 1), random.uniform(0, WORLD_SIZE - 1)) for _ in range(10)]
+eggs = []
 
 renderer = GPURenderer(SCREEN_WIDTH, SCREEN_HEIGHT)
 clock = pygame.time.Clock()
@@ -113,10 +114,28 @@ while running:
 
     pre_count = len(worms)
     new_worms = []
-    worms = [w for w in worms if w.update(world, dt, new_worms)]
-    births = len(new_worms)
+    new_eggs = []
+    worms = [w for w in worms if w.update(world, dt, new_worms, new_eggs)]
+    eggs.extend(new_eggs)
+
+    hatched_worms = []
+    active_eggs = []
+    for egg in eggs:
+        if egg.update(dt):
+            larva = Worm(egg.x, egg.y, inherited_expression=egg.inherited_expression)
+            larva.size = 0.3
+            larva.energy = 40
+            larva.age = 0
+            larva.stage = "L1"
+            hatched_worms.append(larva)
+        else:
+            active_eggs.append(egg)
+    eggs = active_eggs
+
+    births = len(hatched_worms)
     deaths = max(0, pre_count - len(worms))
     worms.extend(new_worms)
+    worms.extend(hatched_worms)
 
     instant_births = births / max(dt, 1e-6)
     instant_deaths = deaths / max(dt, 1e-6)
@@ -299,6 +318,7 @@ while running:
         imgui.new_frame()
         imgui.begin("Simulation")
         imgui.text(f"Worms: {len(worms)}")
+        imgui.text(f"Eggs: {len(eggs)}")
         imgui.text(f"Avg Energy: {avg_energy:.1f}")
         imgui.text(f"Food Total: {total_food:.1f}")
         imgui.text(f"Pheromone Total: {total_pheromone:.1f}")
@@ -313,7 +333,7 @@ while running:
         imgui_renderer.render(imgui.get_draw_data())
     else:
         pygame.display.set_caption(
-            f"Worm Simulator GPU | Worms:{len(worms)} AvgEnergy:{avg_energy:.1f} "
+            f"Worm Simulator GPU | Worms:{len(worms)} Eggs:{len(eggs)} AvgEnergy:{avg_energy:.1f} "
             f"Food:{total_food:.0f} Phero:{total_pheromone:.0f} "
             f"B/s:{births_per_sec:.2f} D/s:{deaths_per_sec:.2f} "
             f"Speed:{simulation_speed:.1f}x View:{view_mode} Zoom:{zoom:.2f}"

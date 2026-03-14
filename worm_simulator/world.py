@@ -8,18 +8,44 @@ GRID_SIZE = 128
 class World:
 
     def __init__(self):
+        self.width = WORLD_SIZE
+        self.height = WORLD_SIZE
 
         self.food = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.food_grid = np.zeros((WORLD_SIZE, WORLD_SIZE), dtype=np.float32)
         self.pheromone = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.chem = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
+        self.medium = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
 
         self._world_to_food_idx = np.linspace(0, GRID_SIZE - 1, WORLD_SIZE).astype(np.int32)
 
-        for _ in range(12):
-            gx = random.randint(4, GRID_SIZE - 5)
-            gy = random.randint(4, GRID_SIZE - 5)
-            self.food[gx - 2:gx + 3, gy - 2:gy + 3] = 1.0
+        for _ in range(10):
+            gx = random.randint(0, GRID_SIZE - 1)
+            gy = random.randint(0, GRID_SIZE - 1)
+            self._add_food_cluster(gx, gy, radius=10, amount=2.0)
+
+        for _ in range(5):
+            gx = random.randint(0, GRID_SIZE - 1)
+            gy = random.randint(0, GRID_SIZE - 1)
+            self._add_medium_patch(gx, gy, radius=8, value=1.0)
+
+    def _add_food_cluster(self, cx, cy, radius=10, amount=2.0):
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                if dx * dx + dy * dy > radius * radius:
+                    continue
+                gx = (cx + dx) % GRID_SIZE
+                gy = (cy + dy) % GRID_SIZE
+                self.food[gx, gy] += amount
+
+    def _add_medium_patch(self, cx, cy, radius=8, value=1.0):
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                if dx * dx + dy * dy > radius * radius:
+                    continue
+                gx = (cx + dx) % GRID_SIZE
+                gy = (cy + dy) % GRID_SIZE
+                self.medium[gx, gy] = value
 
     def update(self, dt=1 / 60):
 
@@ -32,15 +58,10 @@ class World:
         ) / 4
         self.food += 0.02 * (food_diffusion - self.food)
 
-        if random.random() < 0.002:
-            fx = random.randint(0, GRID_SIZE - 1)
-            fy = random.randint(0, GRID_SIZE - 1)
-            self.food[fx, fy] += 10.0
-
         if random.random() < 0.02:
-            x = random.randint(0, GRID_SIZE - 1)
-            y = random.randint(0, GRID_SIZE - 1)
-            self.food[x, y] += random.uniform(3, 8)
+            cx = random.randint(0, GRID_SIZE - 1)
+            cy = random.randint(0, GRID_SIZE - 1)
+            self._add_food_cluster(cx, cy, radius=10, amount=2.0)
 
         np.clip(self.food, 0.0, 100.0, out=self.food)
 
@@ -76,7 +97,20 @@ class World:
         gy = int((y % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
         return self.food[gx % GRID_SIZE, gy % GRID_SIZE]
 
-    def get_pheromone(self, x, y):
+    def sample_food(self, x, y):
         gx = int((x % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
         gy = int((y % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
-        return self.pheromone[gx % GRID_SIZE, gy % GRID_SIZE]
+        return float(self.food[gx % GRID_SIZE, gy % GRID_SIZE])
+
+    def sample_pheromone(self, x, y):
+        gx = int((x % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+        gy = int((y % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+        return float(self.pheromone[gx % GRID_SIZE, gy % GRID_SIZE])
+
+    def sample_medium(self, x, y):
+        gx = int((x % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+        gy = int((y % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+        return float(self.medium[gx % GRID_SIZE, gy % GRID_SIZE])
+
+    def get_pheromone(self, x, y):
+        return self.sample_pheromone(x, y)
