@@ -22,6 +22,8 @@ ZOOM_MAX = 20.0
 CAMERA_STEP = 12.0
 WORM_THICKNESS_SCALE = 2.0 / 3.0
 TARGET_FPS = 60
+FIXED_DT = 1.0 / 60.0
+RENDER_GRID_STEP = 4
 
 pygame.init()
 
@@ -51,6 +53,7 @@ eggs = []
 
 renderer = GPURenderer(SCREEN_WIDTH, SCREEN_HEIGHT)
 clock = pygame.time.Clock()
+accumulator = 0.0
 
 running = True
 simulation_speed = 1.0
@@ -134,10 +137,11 @@ def build_tapered_mesh(points, base_width):
 
 while running:
 
-    dt = clock.tick(TARGET_FPS) / 1000.0
-    if dt <= 0:
-        dt = 1.0 / TARGET_FPS
-    dt *= simulation_speed
+    frame_time = clock.tick(TARGET_FPS) / 1000.0
+    if frame_time <= 0.0:
+        frame_time = FIXED_DT
+    frame_time = min(frame_time, 0.25)
+    accumulator += frame_time * simulation_speed
 
     for event in pygame.event.get():
         if imgui_renderer:
@@ -196,53 +200,66 @@ while running:
                 zoom /= 1.1
             zoom = max(ZOOM_MIN, min(zoom, ZOOM_MAX))
 
-    world.update(dt)
-    world.set_worm_positions(worms)
+    births = 0
+    deaths = 0
 
-    pre_count = len(worms)
-    new_worms = []
-    new_eggs = []
-    worms = [w for w in worms if w.update(world, dt, new_worms, new_eggs)]
-    eggs.extend(new_eggs)
+    while accumulator >= FIXED_DT:
+        world.update(FIXED_DT)
+        world.set_worm_positions(worms)
 
-    hatched_worms = []
-    active_eggs = []
-    for egg in eggs:
-        if egg.update(dt):
-            larva = Worm(
-                egg.x,
-                egg.y,
-                inherited_expression=egg.inherited_expression,
-                inherited_genes=getattr(egg, "inherited_genome", getattr(egg, "inherited_genes", None)),
-            )
-            larva.size = 0.3
-            larva.energy = 40
-            larva.age = 0
-            larva.stage = "juvenile"
-            larva.generation = int(getattr(egg, "generation", 0))
-            larva.lineage_id = int(getattr(egg, "lineage_id", getattr(larva, "lineage_id", 0)))
-            larva.color = larva._lineage_color(larva.lineage_id)
-            hatched_worms.append(larva)
-        else:
-            active_eggs.append(egg)
-    eggs = active_eggs
+        pre_count = len(worms)
+        new_worms = []
+        new_eggs = []
+        active_worms = []
+        for worm in worms:
+            if worm.update(world, FIXED_DT, new_worms, new_eggs, worms):
+                active_worms.append(worm)
+        worms = active_worms
+        eggs.extend(new_eggs)
 
-    births = len(hatched_worms)
-    deaths = max(0, pre_count - len(worms))
-    total_births += births
-    total_deaths += deaths
-    worms.extend(new_worms)
-    worms.extend(hatched_worms)
-    if len(worms) > MAX_WORMS:
-        worms = worms[:MAX_WORMS]
+        hatched_worms = []
+        active_eggs = []
+        for egg in eggs:
+            if egg.update(FIXED_DT):
+                larva = Worm(
+                    egg.x,
+                    egg.y,
+                    inherited_expression=egg.inherited_expression,
+                    inherited_genes=getattr(egg, "inherited_genome", getattr(egg, "inherited_genes", None)),
+                )
+                larva.size = 0.3
+                larva.energy = 40
+                larva.age = 0
+                larva.stage = "juvenile"
+                larva.generation = int(getattr(egg, "generation", 0))
+                larva.lineage_id = int(getattr(egg, "lineage_id", getattr(larva, "lineage_id", 0)))
+                larva._refresh_visual_color()
+                hatched_worms.append(larva)
+            else:
+                active_eggs.append(egg)
+        eggs = active_eggs
 
-    if worms:
-        max_generation = max(max_generation, max(getattr(w, "generation", 0) for w in worms))
-    if eggs:
-        max_generation = max(max_generation, max(getattr(e, "generation", 0) for e in eggs))
+        step_births = len(hatched_worms)
+        step_deaths = max(0, pre_count - len(worms))
+        births += step_births
+        deaths += step_deaths
+        total_births += step_births
+        total_deaths += step_deaths
 
-    instant_births = births / max(dt, 1e-6)
-    instant_deaths = deaths / max(dt, 1e-6)
+        worms.extend(new_worms)
+        worms.extend(hatched_worms)
+        if len(worms) > MAX_WORMS:
+            worms = worms[:MAX_WORMS]
+
+        if worms:
+            max_generation = max(max_generation, max(getattr(w, "generation", 0) for w in worms))
+        if eggs:
+            max_generation = max(max_generation, max(getattr(e, "generation", 0) for e in eggs))
+
+        accumulator -= FIXED_DT
+
+    instant_births = births / max(frame_time, 1e-6)
+    instant_deaths = deaths / max(frame_time, 1e-6)
     births_per_sec = births_per_sec * 0.9 + instant_births * 0.1
     deaths_per_sec = deaths_per_sec * 0.9 + instant_deaths * 0.1
 
@@ -307,8 +324,8 @@ while running:
     chem_buckets = [[] for _ in range(5)]
     pheromone_positions = []
 
-    for x in range(WORLD_SIZE):
-        for y in range(WORLD_SIZE):
+    for x in range(0, WORLD_SIZE, RENDER_GRID_STEP):
+        for y in range(0, WORLD_SIZE, RENDER_GRID_STEP):
             gx = (x / WORLD_SIZE) * world_scale
             gy = (y / WORLD_SIZE) * world_scale
 

@@ -23,6 +23,10 @@ MUSCLE_FORCE = 3.0
 WAVE_AMPLITUDE = 0.35
 WAVE_FREQUENCY = 1.2
 WAVE_SPACING = 0.45
+VELOCITY_DAMPING = 0.92
+MALE_RATIO = 0.05
+MATING_RANGE = 5.0
+MALE_COLOR = (80.0 / 255.0, 120.0 / 255.0, 255.0 / 255.0)
 
 
 def sample_chem(env, x, y):
@@ -127,7 +131,12 @@ class Worm:
 
         self.generation = int(inherited_genes.get("generation", 0))
         self.lineage_id = int(inherited_genes.get("lineage_id", random.randint(0, 1000000)))
-        self.color = self._lineage_color(self.lineage_id)
+        inherited_sex = inherited_genes.get("sex")
+        if inherited_sex in ("male", "hermaphrodite"):
+            self.sex = inherited_sex
+        else:
+            self.sex = "male" if random.random() < MALE_RATIO else "hermaphrodite"
+        self._refresh_visual_color()
 
         base_gene_speed = float(
             inherited_genes.get("gene_speed", inherited_genes.get("speed", random.uniform(0.8, 1.2)))
@@ -283,8 +292,158 @@ class Worm:
             "energy_efficiency": self.genome["energy_efficiency"],
             "lineage_id": child_lineage_id,
             "generation": self.generation + 1,
+            "sex": "male" if random.random() < MALE_RATIO else "hermaphrodite",
         }
         return child_genes
+
+    @staticmethod
+    def _mutate_gene(value, low, high):
+        return max(low, min(high, value * random.uniform(0.95, 1.05)))
+
+    def _build_mated_child_genes(self, mate):
+        child_lineage_id = self.lineage_id
+        if self.lineage_id != mate.lineage_id:
+            child_lineage_id = random.choice([self.lineage_id, mate.lineage_id])
+        if random.random() < 0.05:
+            child_lineage_id = random.randint(0, 1000000)
+
+        child_gene_speed = self._mutate_gene((self.gene_speed + mate.gene_speed) * 0.5, 0.6, 1.4)
+        child_gene_food_sense = self._mutate_gene((self.gene_food_sense + mate.gene_food_sense) * 0.5, 0.6, 1.4)
+        child_gene_phero_sense = self._mutate_gene((self.gene_phero_sense + mate.gene_phero_sense) * 0.5, 0.6, 1.4)
+        child_gene_reproduction_energy = self._mutate_gene(
+            (self.gene_reproduction_energy + mate.gene_reproduction_energy) * 0.5,
+            120.0,
+            280.0,
+        )
+        child_turn_bias = self._mutate_gene(
+            (self.genome["turn_bias"] + mate.genome["turn_bias"]) * 0.5,
+            0.75,
+            1.25,
+        )
+        child_efficiency = self._mutate_gene(
+            (self.genome["energy_efficiency"] + mate.genome["energy_efficiency"]) * 0.5,
+            0.75,
+            1.25,
+        )
+
+        child_genes = {
+            "gene_speed": child_gene_speed,
+            "gene_food_sense": child_gene_food_sense,
+            "gene_phero_sense": child_gene_phero_sense,
+            "gene_reproduction_energy": child_gene_reproduction_energy,
+            "speed": child_gene_speed,
+            "food_sense": child_gene_food_sense,
+            "pheromone_sense": child_gene_phero_sense,
+            "reproduction_energy": child_gene_reproduction_energy,
+            "turn_bias": child_turn_bias,
+            "energy_efficiency": child_efficiency,
+            "lineage_id": child_lineage_id,
+            "generation": max(self.generation, mate.generation) + 1,
+            "sex": "male" if random.random() < MALE_RATIO else "hermaphrodite",
+        }
+        return child_genes
+
+    def _refresh_visual_color(self):
+        if self.sex == "male":
+            self.color = MALE_COLOR
+        else:
+            self.color = self._lineage_color(self.lineage_id)
+
+    def _spawn_egg(self, child_genes, inherited_expression, new_worms=None, new_eggs=None, parent_x=None, parent_y=None):
+        spawn_x = self.x if parent_x is None else parent_x
+        spawn_y = self.y if parent_y is None else parent_y
+        egg = Egg(
+            spawn_x + random.uniform(-5, 5),
+            spawn_y + random.uniform(-5, 5),
+            inherited_expression=inherited_expression,
+            inherited_genome=child_genes,
+            inherited_genes=child_genes,
+            generation=child_genes.get("generation", self.generation + 1),
+            lineage_id=child_genes.get("lineage_id", self.lineage_id),
+        )
+
+        if new_eggs is not None:
+            new_eggs.append(egg)
+            return
+
+        if new_worms is not None:
+            baby = Worm(
+                egg.x,
+                egg.y,
+                inherited_expression=egg.inherited_expression,
+                inherited_genes=getattr(egg, "inherited_genome", egg.inherited_genes),
+            )
+            baby.size = 0.3
+            baby.energy = 40
+            baby.age = 0
+            baby.stage = "juvenile"
+            baby.generation = int(getattr(egg, "generation", self.generation + 1))
+            baby.lineage_id = int(getattr(egg, "lineage_id", self.lineage_id))
+            baby.sex = getattr(baby, "sex", child_genes.get("sex", "hermaphrodite"))
+            baby._refresh_visual_color()
+            new_worms.append(baby)
+
+    def _reproduce_self(self, new_worms=None, new_eggs=None):
+        persistence = random.uniform(0.20, 0.34)
+        inherited_expression = {
+            "foraging": (1.0 - persistence) * 1.0 + persistence * self.gene_expression["foraging"],
+            "stress": (1.0 - persistence) * 0.0 + persistence * self.gene_expression["stress"],
+            "liquid": (1.0 - persistence) * 0.0 + persistence * self.gene_expression["liquid"],
+        }
+        child_genes = self._build_mutated_child_genes()
+        self._spawn_egg(child_genes, inherited_expression, new_worms, new_eggs)
+        self.energy -= 60
+        self.repro_timer = 30.0
+
+    def _find_mate(self, nearby_worms):
+        if not nearby_worms:
+            return None
+
+        max_distance_sq = MATING_RANGE * MATING_RANGE
+        for other in nearby_worms:
+            if other is self:
+                continue
+            if getattr(other, "dead", False):
+                continue
+            if getattr(other, "sex", "hermaphrodite") != "hermaphrodite":
+                continue
+            if getattr(other, "stage", "juvenile") != "adult":
+                continue
+            if getattr(other, "dauer", False):
+                continue
+            if getattr(other, "repro_timer", 0.0) > 0.0:
+                continue
+            if getattr(other, "energy", 0.0) <= getattr(other, "gene_reproduction_energy", 0.0):
+                continue
+
+            dx = self.x - other.x
+            dy = self.y - other.y
+            if dx * dx + dy * dy <= max_distance_sq:
+                return other
+
+        return None
+
+    def _reproduce_mate(self, mate, new_worms=None, new_eggs=None):
+        child_genes = self._build_mated_child_genes(mate)
+        inherited_expression = {
+            "foraging": (self.gene_expression["foraging"] + mate.gene_expression["foraging"]) * 0.5,
+            "stress": (self.gene_expression["stress"] + mate.gene_expression["stress"]) * 0.5,
+            "liquid": (self.gene_expression["liquid"] + mate.gene_expression["liquid"]) * 0.5,
+        }
+        spawn_x = (self.x + mate.x) * 0.5
+        spawn_y = (self.y + mate.y) * 0.5
+        self._spawn_egg(
+            child_genes,
+            inherited_expression,
+            new_worms=new_worms,
+            new_eggs=new_eggs,
+            parent_x=spawn_x,
+            parent_y=spawn_y,
+        )
+        self.energy -= 20
+        mate.energy -= 60
+        self.repro_timer = 12.0
+        mate.repro_timer = 30.0
 
     @staticmethod
     def _lineage_color(lineage_id):
@@ -295,7 +454,7 @@ class Worm:
             rng.randint(120, 255) / 255.0,
         )
 
-    def update(self, world, dt=1 / 60, new_worms=None, new_eggs=None):
+    def update(self, world, dt=1 / 60, new_worms=None, new_eggs=None, nearby_worms=None):
 
         if self.dead:
             return False
@@ -558,8 +717,8 @@ class Worm:
         drive_blend = min(1.0, dt * 6.0)
         head_vx += (target_vx - head_vx) * drive_blend
         head_vy += (target_vy - head_vy) * drive_blend
-        head_vx *= 0.9
-        head_vy *= 0.9
+        head_vx *= VELOCITY_DAMPING
+        head_vy *= VELOCITY_DAMPING
 
         MAX_SPEED = 6.0
         speed = math.sqrt(head_vx * head_vx + head_vy * head_vy)
@@ -612,8 +771,8 @@ class Worm:
             ny = dx / dist
             seg_vx += nx * bend * MUSCLE_FORCE * dt
             seg_vy += ny * bend * MUSCLE_FORCE * dt
-            seg_vx *= 0.9
-            seg_vy *= 0.9
+            seg_vx *= VELOCITY_DAMPING
+            seg_vy *= VELOCITY_DAMPING
 
             speed = math.sqrt(seg_vx * seg_vx + seg_vy * seg_vy)
             if speed > MAX_SPEED:
@@ -722,44 +881,14 @@ class Worm:
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
             world.pheromone[gx, gy] += 0.05
 
-        if (not self.dauer) and self.stage == "adult" and self.energy > self.gene_reproduction_energy and self.repro_timer <= 0:
-            persistence = random.uniform(0.20, 0.34)
-            inherited_expression = {
-                "foraging": (1.0 - persistence) * 1.0 + persistence * self.gene_expression["foraging"],
-                "stress": (1.0 - persistence) * 0.0 + persistence * self.gene_expression["stress"],
-                "liquid": (1.0 - persistence) * 0.0 + persistence * self.gene_expression["liquid"],
-            }
-            child_genes = self._build_mutated_child_genes()
-            egg = Egg(
-                self.x + random.uniform(-5, 5),
-                self.y + random.uniform(-5, 5),
-                inherited_expression=inherited_expression,
-                inherited_genome=child_genes,
-                inherited_genes=child_genes,
-                generation=self.generation + 1,
-                lineage_id=child_genes.get("lineage_id", self.lineage_id),
-            )
-            if new_eggs is not None:
-                new_eggs.append(egg)
-            elif new_worms is not None:
-                baby = Worm(
-                    egg.x,
-                    egg.y,
-                    inherited_expression=egg.inherited_expression,
-                    inherited_genes=getattr(egg, "inherited_genome", egg.inherited_genes),
-                )
-                baby.size = 0.3
-                baby.energy = 40
-                baby.age = 0
-                baby.stage = "juvenile"
-                baby.generation = int(getattr(egg, "generation", self.generation + 1))
-                baby.lineage_id = int(getattr(egg, "lineage_id", self.lineage_id))
-                baby.color = self._lineage_color(baby.lineage_id)
-                new_worms.append(baby)
-            else:
-                return True
-            self.energy -= 60
-            self.repro_timer = 30.0
+        if (not self.dauer) and self.stage == "adult" and self.repro_timer <= 0:
+            if self.sex == "hermaphrodite":
+                if self.energy > self.gene_reproduction_energy:
+                    self._reproduce_self(new_worms=new_worms, new_eggs=new_eggs)
+            elif self.sex == "male" and self.energy > 30.0:
+                mate = self._find_mate(nearby_worms)
+                if mate is not None:
+                    self._reproduce_mate(mate, new_worms=new_worms, new_eggs=new_eggs)
 
         self.energy = max(0.0, self.energy)
 
