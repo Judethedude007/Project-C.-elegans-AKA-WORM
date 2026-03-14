@@ -421,7 +421,7 @@ class Worm:
 
             if world.food[gx, gy] > 0 and not self.dauer:
 
-                eaten = min(0.2, world.food[gx, gy])
+                eaten = min(0.05, world.food[gx, gy])
 
                 world.food[gx, gy] -= eaten
                 self.energy += eaten * 5
@@ -483,7 +483,11 @@ class Worm:
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
             world.pheromone[gx, gy] += 0.05
 
-        if self.stage == "adult" and self.energy > 120 and self.repro_timer <= 0:
+        local_density = world.count_worms_near(self.x, self.y, radius=20)
+        if local_density > 20:
+            self.energy -= 0.2 * dt
+
+        if self.stage == "adult" and self.energy > 200 and self.repro_timer <= 0:
             persistence = random.uniform(0.20, 0.34)
             inherited_expression = {
                 "foraging": (1.0 - persistence) * 1.0 + persistence * self.gene_expression["foraging"],
@@ -506,7 +510,7 @@ class Worm:
                 new_worms.append(baby)
             else:
                 return True
-            self.energy -= 30
+            self.energy -= 80
             self.repro_timer = 30.0
 
         self.energy = max(0.0, self.energy)

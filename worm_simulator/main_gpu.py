@@ -111,6 +111,7 @@ while running:
                 follow_index = (follow_index + 1) % len(worms)
 
     world.update(dt)
+    world.set_worm_positions(worms)
 
     pre_count = len(worms)
     new_worms = []

@@ -10,6 +10,7 @@ class World:
     def __init__(self):
         self.width = WORLD_SIZE
         self.height = WORLD_SIZE
+        self.worm_positions = []
 
         self.food = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.food_grid = np.zeros((WORLD_SIZE, WORLD_SIZE), dtype=np.float32)
@@ -122,3 +123,16 @@ class World:
 
     def get_pheromone(self, x, y):
         return self.sample_pheromone(x, y)
+
+    def set_worm_positions(self, worms):
+        self.worm_positions = [(float(w.x), float(w.y)) for w in worms if not getattr(w, "dead", False)]
+
+    def count_worms_near(self, x, y, radius=20):
+        radius_sq = float(radius) * float(radius)
+        count = 0
+        for wx, wy in self.worm_positions:
+            dx = wx - x
+            dy = wy - y
+            if dx * dx + dy * dy <= radius_sq:
+                count += 1
+        return count
