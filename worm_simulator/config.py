@@ -1,4 +1,7 @@
-WORLD_SIZE = 600
+WORLD_WIDTH = 1024
+WORLD_HEIGHT = 1024
+# The simulation currently assumes a square world in many modules.
+WORLD_SIZE = WORLD_WIDTH
 CELL_SIZE = 4
 
 SCREEN_WIDTH = 1200

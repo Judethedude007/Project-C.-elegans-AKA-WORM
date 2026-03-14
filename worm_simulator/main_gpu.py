@@ -17,9 +17,10 @@ from worm import Worm, Egg, SEGMENTS, SEGMENT_LENGTH
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_SIZE, INITIAL_WORMS, MAX_WORMS
 from gpu_renderer import GPURenderer
 
-ZOOM_MIN = max(0.2, 2.0 / WORLD_SIZE)
-ZOOM_MAX = 100.0
+ZOOM_MIN = 0.5
+ZOOM_MAX = 20.0
 CAMERA_STEP = 12.0
+WORM_THICKNESS_SCALE = 2.0 / 3.0
 
 pygame.init()
 
@@ -173,6 +174,12 @@ while running:
                 zoom *= 1.1
             if event.key == pygame.K_e:
                 zoom /= 1.1
+            plus_keys = (pygame.K_EQUALS, getattr(pygame, "K_PLUS", pygame.K_EQUALS), pygame.K_KP_PLUS)
+            if event.key in plus_keys:
+                zoom *= 1.1
+            minus_keys = (pygame.K_MINUS, pygame.K_KP_MINUS)
+            if event.key in minus_keys:
+                zoom /= 1.1
 
             zoom = max(ZOOM_MIN, min(zoom, ZOOM_MAX))
 
@@ -180,6 +187,13 @@ while running:
                 follow_mode = not follow_mode
             if event.key == pygame.K_TAB and worms:
                 follow_index = (follow_index + 1) % len(worms)
+
+        if event.type == pygame.MOUSEWHEEL:
+            if event.y > 0:
+                zoom *= 1.1
+            elif event.y < 0:
+                zoom /= 1.1
+            zoom = max(ZOOM_MIN, min(zoom, ZOOM_MAX))
 
     world.update(dt)
     world.set_worm_positions(worms)
@@ -275,7 +289,7 @@ while running:
                     for p in strip
                 ]
 
-                base_width_world = max(0.9, SEGMENT_LENGTH * max(worm.size, 0.2) * 0.6)
+                base_width_world = max(0.6, SEGMENT_LENGTH * max(worm.size, 0.2) * 0.6 * WORM_THICKNESS_SCALE)
                 base_width_norm = (base_width_world / WORLD_SIZE) * world_scale
                 mesh = build_tapered_mesh(strip_norm, base_width_norm)
                 if len(mesh) >= 4:

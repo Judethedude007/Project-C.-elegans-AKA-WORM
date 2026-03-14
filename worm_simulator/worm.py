@@ -647,13 +647,18 @@ class Worm:
 
         gx = int(self.x / WORLD_SIZE * GRID_SIZE)
         gy = int(self.y / WORLD_SIZE * GRID_SIZE)
+        food_here = 0.0
+        if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
+            food_here = float(world.food[gx, gy])
 
         efficiency = max(0.6, self.genome["energy_efficiency"])
         energy_loss = (0.02 / efficiency) * dt
+        if food_here < 0.05:
+            energy_loss *= 1.5
         density = 0.0
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
             density = float(world.worm_density[gx, gy])
-        energy_loss *= (1.0 + density * 8.0)
+        energy_loss *= (1.0 + density * 15.0)
         if self.dauer:
             energy_loss *= 0.1
 
@@ -662,10 +667,6 @@ class Worm:
         food_eaten = 0.0
 
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
-            food_here = float(world.food[gx, gy])
-            if food_here < 0.03:
-                self.energy -= 0.04 * dt
-
             if world.food[gx, gy] > 0 and not self.dauer:
 
                 eaten = min(0.05 * time_scale, world.food[gx, gy])
@@ -753,8 +754,8 @@ class Worm:
             self.dead = True
             return False
 
-        if self.age > 400.0:
-            death_prob = max(0.0, min(1.0, (self.age - 400.0) / (MAX_AGE - 400.0)))
+        if self.age > 350.0:
+            death_prob = max(0.0, min(1.0, (self.age - 350.0) / 150.0))
             if random.random() < death_prob * dt:
                 self.dead = True
                 return False
