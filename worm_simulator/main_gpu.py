@@ -19,6 +19,7 @@ from gpu_renderer import GPURenderer
 ZOOM_MIN = max(0.2, 2.0 / WORLD_SIZE)
 ZOOM_MAX = 100.0
 CAMERA_STEP = 12.0
+MAX_WORMS = 200
 
 pygame.init()
 
@@ -142,6 +143,8 @@ while running:
     deaths = max(0, pre_count - len(worms))
     worms.extend(new_worms)
     worms.extend(hatched_worms)
+    if len(worms) > MAX_WORMS:
+        worms = worms[:MAX_WORMS]
 
     instant_births = births / max(dt, 1e-6)
     instant_deaths = deaths / max(dt, 1e-6)

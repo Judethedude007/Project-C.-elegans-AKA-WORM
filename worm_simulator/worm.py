@@ -77,12 +77,23 @@ class Worm:
         self.repro_timer = 0.0
         self.run_timer = random.uniform(2.0, 6.0)
         self.dauer = False
-        self.neuron_aiy = 0.0
-        self.neuron_aiz = 0.0
-        self.neuron_avb = 0.0
-        self.neuron_ava = 0.0
-        self.syn_food = random.uniform(0.3, 0.7)
-        self.syn_pheromone = random.uniform(0.3, 0.7)
+        self.neurons = {
+            "ASE": 0.0,
+            "AWA": 0.0,
+            "ASH": 0.0,
+            "AIY": 0.0,
+            "AIZ": 0.0,
+            "AVB": 0.0,
+            "AVA": 0.0,
+        }
+        self.syn = {
+            ("ASE", "AIY"): 0.8,
+            ("AWA", "AIY"): 0.3,
+            ("ASE", "AIZ"): -0.5,
+            ("ASH", "AIZ"): 0.7,
+            ("AIY", "AVB"): 0.9,
+            ("AIZ", "AVA"): 0.9,
+        }
 
         if inherited_genes is None:
             inherited_genes = {}
@@ -260,10 +271,12 @@ class Worm:
         oxygen = max(0.0, min(1.0, 1.0 - food_signal / 5.0))
         touch = max(0.0, min(1.0, (margin - min_edge_distance) / margin)) * 3.0
 
-        sensor_food = max(-1.0, min(1.0, food_left - food_right))
-        sensor_pheromone = max(0.0, min(1.0, pheromone))
-        sensor_oxygen = oxygen
-        sensor_touch = touch
+        local_density = world.count_worms_near(self.x, self.y, radius=20)
+        collision_signal = max(touch, max(0.0, min(1.0, (local_density - 1.0) / 10.0)))
+
+        self.neurons["ASE"] = food_gradient
+        self.neurons["AWA"] = food_here
+        self.neurons["ASH"] = collision_signal
 
         if food_here < 0.02 and pheromone_here > 0.4:
             if random.random() < 0.002:
@@ -273,24 +286,26 @@ class Worm:
             self.stage = "dauer"
             self.size = min(self.size, 0.35)
 
-        self.syn_food += sensor_food * 0.0001
-        self.syn_pheromone += sensor_pheromone * 0.00005
-        self.syn_food = max(0.0, min(1.0, self.syn_food))
-        self.syn_pheromone = max(0.0, min(1.0, self.syn_pheromone))
+        self.neurons["AIY"] = (
+            self.syn[("ASE", "AIY")] * self.neurons["ASE"]
+            + self.syn[("AWA", "AIY")] * self.neurons["AWA"]
+        )
+        self.neurons["AIZ"] = (
+            self.syn[("ASE", "AIZ")] * self.neurons["ASE"]
+            + self.syn[("ASH", "AIZ")] * self.neurons["ASH"]
+        )
 
-        weighted_food = sensor_food * self.syn_food
-        weighted_pheromone = sensor_pheromone * self.syn_pheromone
-        self.neuron_aiy = 0.6 * weighted_food + 0.2 * weighted_pheromone - 0.1 * sensor_oxygen
-        self.neuron_aiz = -0.5 * weighted_food + 0.3 * sensor_touch + 0.1 * sensor_oxygen
-        self.neuron_avb = max(0.0, self.neuron_aiy)
-        self.neuron_ava = max(0.0, self.neuron_aiz)
+        self.neurons["AVB"] = max(0.0, self.syn[("AIY", "AVB")] * self.neurons["AIY"])
+        self.neurons["AVA"] = max(0.0, self.syn[("AIZ", "AVA")] * self.neurons["AIZ"])
 
-        if self.neuron_ava > 0.6:
+        forward = self.neurons["AVB"]
+        reverse = self.neurons["AVA"]
+        if reverse > forward:
             self.direction = -1
-        elif self.neuron_avb > 0.2:
+        else:
             self.direction = 1
 
-        turn_bias = sensor_food * 0.4 + sensor_pheromone * 0.2
+        turn_bias = self.neurons["ASE"] * 0.4 + pheromone_here * 0.2
 
         self.run_timer -= dt
         if food_gradient > 0:
@@ -352,7 +367,7 @@ class Worm:
         turn = max(-MAX_TURN, min(MAX_TURN, turn))
 
         if food_gradient < 0 and random.random() < 0.02:
-            self.angle += random.uniform(-0.3, 0.3)
+            self.angle += random.uniform(-0.25, 0.25)
 
         random_turn = random.uniform(-0.02, 0.02)
         if pheromone_here > 0.25:
@@ -367,6 +382,11 @@ class Worm:
         self.angular_velocity += turn_combined
         self.angular_velocity += pheromone_turn
         self.angular_velocity += turn_bias * self.gene_turn_bias
+        turn_signal = self.neurons["ASE"] * 0.4
+        self.angular_velocity *= 0.6
+        self.angular_velocity += turn_signal
+        if abs(turn_signal) < 0.01:
+            self.angular_velocity *= 0.7
 
         if self.x < margin:
             self.angular_velocity += 0.05
@@ -377,7 +397,7 @@ class Worm:
         if self.y > world.height - margin:
             self.angular_velocity -= 0.05
 
-        self.angular_velocity = max(-0.12, min(0.12, self.angular_velocity))
+        self.angular_velocity = max(-0.08, min(0.08, self.angular_velocity))
         self.angle += self.angular_velocity * dt * 60
 
         self.direction_x = math.cos(self.angle)
@@ -434,10 +454,12 @@ class Worm:
 
         wave_strength /= SEGMENTS
 
-        self.neural_phase += dt * (3.0 + self.neuron_avb * 2.0)
+        self.neural_phase += dt * (3.0 + self.neurons["AVB"] * 2.0)
 
         target_speed = 40.0
         self.speed = 0.9 * self.speed + 0.1 * target_speed
+        serotonin = min(1.0, food_here * 4)
+        self.speed *= (0.7 + serotonin * 0.6)
         move_speed = self.speed * self.gene_speed
         if pheromone_here > 0.25:
             move_speed *= 0.8
@@ -525,7 +547,6 @@ class Worm:
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
             world.pheromone[gx, gy] += 0.05
 
-        local_density = world.count_worms_near(self.x, self.y, radius=20)
         if local_density > 20:
             self.energy -= 0.2 * dt
 
