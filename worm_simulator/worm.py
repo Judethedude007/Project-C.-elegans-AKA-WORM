@@ -9,7 +9,8 @@ MOVE_COST = 0.2
 AGE_LIMIT = 5000
 REPRODUCTION_COST = 2000
 SEGMENTS = 16
-SEGMENT_LENGTH = 5
+BASE_SEGMENT_LENGTH = 5
+SEGMENT_LENGTH = BASE_SEGMENT_LENGTH
 STIFFNESS = 0.25
 DAMPING = 0.85
 MAX_STRETCH = SEGMENT_LENGTH * 2.0
@@ -37,11 +38,15 @@ class Worm:
         self.angular_velocity = 0.0
         self.time = 0.0
         self.wave_phase = 0.0
+        self.neural_phase = 0.0
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
         self.vx = 0.0
         self.vy = 0.0
         self.speed = 1.5
+        self.syn_left = 0.5
+        self.syn_right = 0.5
+        self.size = 0.4
 
         if genes is None:
             genes = {
@@ -88,6 +93,10 @@ class Worm:
             return False
 
         self.time += dt
+        self.neural_phase += dt * 3.0
+        self.size += dt * 0.02
+        self.size = min(self.size, 1.0)
+        segment_length = BASE_SEGMENT_LENGTH * self.size
 
         left, right, up, down = self.sense_food(world)
 
@@ -95,17 +104,17 @@ class Worm:
         food_y = down - up
 
         sensor_distance = self.genes["sensor_range"]
-        left_sensor = (
+        left_sensor_pos = (
             self.x + math.cos(self.angle + 0.5) * sensor_distance,
             self.y + math.sin(self.angle + 0.5) * sensor_distance,
         )
-        right_sensor = (
+        right_sensor_pos = (
             self.x + math.cos(self.angle - 0.5) * sensor_distance,
             self.y + math.sin(self.angle - 0.5) * sensor_distance,
         )
 
-        left_val = sample_chem(world, *left_sensor)
-        right_val = sample_chem(world, *right_sensor)
+        left_sensor = sample_chem(world, *left_sensor_pos)
+        right_sensor = sample_chem(world, *right_sensor_pos)
 
         eating = False
         feed_gx = int(self.x / WORLD_SIZE * GRID_SIZE)
@@ -138,14 +147,21 @@ class Worm:
 
         self.angle += self.angular_velocity
 
-        turn_strength = self.genes["turn_sensitivity"]
-        diff = (right_val - left_val) / 100.0
-        turn_signal = diff * turn_strength
-        turn_signal = max(-0.15, min(0.15, turn_signal))
+        delta = (right_sensor - left_sensor) * 0.001
+
+        self.syn_left += delta
+        self.syn_right -= delta
+
+        self.syn_left = max(0.0, min(1.0, self.syn_left))
+        self.syn_right = max(0.0, min(1.0, self.syn_right))
+
+        turn = (right_sensor - left_sensor) * 0.08
+        MAX_TURN = 0.06
+        turn = max(-MAX_TURN, min(MAX_TURN, turn))
         if eating:
-            self.angle += turn_signal * 0.1
+            self.angle += turn * 0.1
         else:
-            self.angle += turn_signal
+            self.angle += turn
 
         self.angle += random.uniform(-0.02, 0.02)
 
@@ -181,7 +197,7 @@ class Worm:
             if dist == 0:
                 continue
 
-            diff = (dist - SEGMENT_LENGTH) / dist
+            diff = (dist - segment_length) / dist
 
             offset_x = dx * diff * 0.5
             offset_y = dy * diff * 0.5
@@ -200,13 +216,14 @@ class Worm:
             self.body[i - 1] = (px, py)
             self.body[i] = (cx, cy)
 
-        phase = self.time * 4
         for i in range(SEGMENTS):
 
-            activation = math.sin(phase - i * 0.5)
+            phase = self.neural_phase - i * 0.45
 
-            self.muscle_left[i] = max(0, activation)
-            self.muscle_right[i] = max(0, -activation)
+            activation = math.sin(phase)
+
+            self.muscle_left[i] = max(0.0, activation)
+            self.muscle_right[i] = max(0.0, -activation)
 
         wave_strength = 0
 
@@ -221,9 +238,10 @@ class Worm:
             speed *= 0.2
 
         forward = speed * (0.5 + wave_strength)
+        forward_speed = forward * 1.25
 
-        self.x += math.cos(self.angle) * forward * dt
-        self.y += math.sin(self.angle) * forward * dt
+        self.x += math.cos(self.angle) * forward_speed * dt
+        self.y += math.sin(self.angle) * forward_speed * dt
 
         self.x = max(0.0, min(self.x, WORLD_SIZE - 1e-6))
         self.y = max(0.0, min(self.y, WORLD_SIZE - 1e-6))
@@ -247,8 +265,8 @@ class Worm:
             bend = max(-1, min(1, self.muscle_left[i] - self.muscle_right[i]))
             segment_angle = base_angle + bend * 0.25
 
-            x -= math.cos(segment_angle) * SEGMENT_LENGTH
-            y -= math.sin(segment_angle) * SEGMENT_LENGTH
+            x -= math.cos(segment_angle) * segment_length
+            y -= math.sin(segment_angle) * segment_length
             self.body[i] = (
                 x,
                 y,
@@ -284,13 +302,13 @@ class Worm:
 
             world.food[gx, gy] -= eaten
 
-            self.energy += eaten * 20
+            self.energy += eaten * 24
             eating = True
 
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
             world.pheromone[gx, gy] += 0.5
 
-        if self.energy > 160:
+        if self.energy > 120:
             self.energy *= 0.5
 
             child_genes = {
