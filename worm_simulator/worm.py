@@ -8,6 +8,7 @@ METABOLISM = 0.3
 MOVE_COST = 0.2
 AGE_LIMIT = 5000
 REPRODUCTION_COST = 2000
+MAX_AGE = 600
 SEGMENTS = 24
 BASE_SEGMENT_LENGTH = 5
 SEGMENT_LENGTH = BASE_SEGMENT_LENGTH
@@ -81,7 +82,11 @@ class Worm:
         self.angle = random.uniform(0, math.tau)
         self.angular_velocity = random.uniform(-0.1, 0.1)
         self.time = 0.0
-        self.wave_phase = 0.0
+        self.wave_phase = random.random() * 6.28
+        self.wave_freq = 1.8
+        self.wave_amp = 0.35
+        self.forward_signal = 0.0
+        self.turn_signal = 0.0
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
         self.direction = 1
@@ -206,6 +211,8 @@ class Worm:
         self.muscle_left = [0.0] * SEGMENTS
         self.muscle_right = [0.0] * SEGMENTS
         self.segment_angle = [0.0] * SEGMENTS
+        self.num_segments = self.segments
+        self.segment_angles = self.segment_angle
 
         default_expression = {
             "foraging": 1.0,
@@ -280,8 +287,7 @@ class Worm:
             return False
 
         self.time += dt
-        if not self.dauer:
-            self.age += dt
+        self.age += dt
         self.repro_timer -= dt
         self._update_stage()
         segment_length = BASE_SEGMENT_LENGTH * self.size
@@ -476,6 +482,8 @@ class Worm:
         turn_signal = self.neurons["ASE"] * 0.4
         self.angular_velocity *= 0.6
         self.angular_velocity += turn_signal
+        self.forward_signal = max(0.0, self.neurons["AVB"])
+        self.turn_signal = turn_signal
         if abs(turn_signal) < 0.01:
             self.angular_velocity *= 0.7
 
@@ -494,14 +502,14 @@ class Worm:
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
 
-        wave_dir = 1.0 if self.direction >= 0 else -1.0
-        wave_drive = 0.75 + self.neurons["AVB"] * 0.65
-        self.wave_phase += dt * math.tau * WAVE_FREQUENCY * wave_drive * wave_dir
+        self.wave_freq = 1.5 + 0.8 * self.forward_signal
+        self.wave_amp = 0.25 + 0.15 * abs(self.turn_signal)
+        self.wave_phase += dt * self.wave_freq
 
-        for i in range(SEGMENTS):
-            phase = self.wave_phase - i * WAVE_SPACING
-            bend = math.sin(phase) * WAVE_AMPLITUDE
-            self.segment_angle[i] = bend
+        for i in range(self.num_segments):
+            phase = self.wave_phase - i * 0.5
+            bend = math.sin(phase) * self.wave_amp
+            self.segment_angles[i] = bend
             self.muscle_left[i] = max(0.0, bend)
             self.muscle_right[i] = max(0.0, -bend)
 
@@ -645,8 +653,7 @@ class Worm:
         density = 0.0
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
             density = float(world.worm_density[gx, gy])
-        if density > 0.02:
-            energy_loss *= (1.0 + density * 5.0)
+        energy_loss *= (1.0 + density * 8.0)
         if self.dauer:
             energy_loss *= 0.1
 
@@ -655,6 +662,9 @@ class Worm:
         food_eaten = 0.0
 
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
+            food_here = float(world.food[gx, gy])
+            if food_here < 0.03:
+                self.energy -= 0.04 * dt
 
             if world.food[gx, gy] > 0 and not self.dauer:
 
@@ -743,10 +753,11 @@ class Worm:
             self.dead = True
             return False
 
-        MAX_AGE = 1200 if self.stage == "dauer" else 500
-        if self.age > MAX_AGE:
-            self.dead = True
-            return False
+        if self.age > 400.0:
+            death_prob = max(0.0, min(1.0, (self.age - 400.0) / (MAX_AGE - 400.0)))
+            if random.random() < death_prob * dt:
+                self.dead = True
+                return False
 
         return True
 
