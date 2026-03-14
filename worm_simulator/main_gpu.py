@@ -12,14 +12,14 @@ except Exception:
     IMGUI_AVAILABLE = False
 
 from world import World
-from worm import Worm, Egg, SEGMENTS
+from worm import Worm, Egg, SEGMENTS, SEGMENT_LENGTH
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_SIZE
 from gpu_renderer import GPURenderer
 
 ZOOM_MIN = max(0.2, 2.0 / WORLD_SIZE)
 ZOOM_MAX = 100.0
 CAMERA_STEP = 12.0
-MAX_WORMS = 200
+MAX_WORMS = 150
 
 pygame.init()
 
@@ -174,12 +174,8 @@ while running:
     head_positions = []
 
     for worm in worms:
-        strip = []
-        for p in worm.smooth_body():
-            x = (p[0] / WORLD_SIZE) * world_scale
-            y = (p[1] / WORLD_SIZE) * world_scale
-            strip.append([x, y])
-        if strip:
+        points = worm.smooth_body()
+        if points:
             if getattr(worm, "dauer", False):
                 color = (0.35, 0.55, 1.0)
             else:
@@ -192,8 +188,33 @@ while running:
                     0.2 + 0.8 * speed_t,
                 )
 
-            worm_strips.append((np.array(strip, dtype="f4"), color))
-            head_positions.append(strip[0])
+            strips = []
+            current_strip = []
+            prev = None
+            max_gap = SEGMENT_LENGTH * 2.0
+
+            for p in points:
+                if prev is not None:
+                    dx = p[0] - prev[0]
+                    dy = p[1] - prev[1]
+                    if (dx * dx + dy * dy) ** 0.5 > max_gap:
+                        if len(current_strip) >= 2:
+                            strips.append(current_strip)
+                        current_strip = []
+
+                x = (p[0] / WORLD_SIZE) * world_scale
+                y = (p[1] / WORLD_SIZE) * world_scale
+                current_strip.append([x, y])
+                prev = p
+
+            if len(current_strip) >= 2:
+                strips.append(current_strip)
+
+            for strip in strips:
+                worm_strips.append((np.array(strip, dtype="f4"), color))
+
+            if strips:
+                head_positions.append(strips[0][0])
 
     food_low = []
     food_mid = []

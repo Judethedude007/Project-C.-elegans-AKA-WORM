@@ -15,6 +15,9 @@ STIFFNESS = 0.25
 DAMPING = 0.85
 MAX_STRETCH = SEGMENT_LENGTH * 2.0
 SENSOR_DISTANCE = 25
+GROUND_FRICTION = 0.82
+SEGMENT_SPRING = 8.0
+MUSCLE_FORCE = 3.0
 
 
 def sample_chem(env, x, y):
@@ -60,7 +63,6 @@ class Worm:
         self.angular_velocity = random.uniform(-0.1, 0.1)
         self.time = 0.0
         self.wave_phase = 0.0
-        self.neural_phase = 0.0
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
         self.direction = 1
@@ -75,7 +77,8 @@ class Worm:
         self.locomotion_mode = "crawl"
         self.prev_food_signal = 0.0
         self.repro_timer = 0.0
-        self.run_timer = random.uniform(2.0, 6.0)
+        self.state = "RUN"
+        self.run_timer = 0.0
         self.dauer = False
         self.neurons = {
             "ASE": 0.0,
@@ -133,6 +136,7 @@ class Worm:
         self.vel = [(0.0, 0.0) for _ in range(self.segments)]
         self.muscle_left = [0.0] * SEGMENTS
         self.muscle_right = [0.0] * SEGMENTS
+        self.segment_angle = [0.0] * SEGMENTS
 
         default_expression = {
             "foraging": 1.0,
@@ -259,8 +263,10 @@ class Worm:
         pheromone_turn = pher_gradient * 0.3
         pheromone_turn *= self.gene_pheromone_weight
 
-        food_signal = (food_here + left_food + right_food) / 3.0
-        food_gradient = food_signal - self.prev_food_signal
+        sensory_food_signal = (food_here + left_food + right_food) / 3.0
+        food_gradient = sensory_food_signal - self.prev_food_signal
+        food_signal = food_here + food_gradient
+        gradient_change = food_signal - self.prev_food_signal
         self.prev_food_signal = food_signal
 
         margin = 40
@@ -307,14 +313,15 @@ class Worm:
 
         turn_bias = self.neurons["ASE"] * 0.4 + pheromone_here * 0.2
 
-        self.run_timer -= dt
-        if food_gradient > 0:
-            self.run_timer += 0.5
-        elif food_gradient < 0:
-            self.run_timer -= 0.5
-        if self.run_timer <= 0:
-            self.angle += random.uniform(-0.6, 0.6)
-            self.run_timer = random.uniform(2.0, 6.0)
+        self.run_timer += dt
+        if self.state == "RUN":
+            if gradient_change < -0.02 and random.random() < 0.15:
+                self.state = "PIROUETTE"
+
+        if self.state == "PIROUETTE":
+            self.angle += random.uniform(-1.2, 1.2)
+            self.state = "RUN"
+            self.run_timer = 0.0
 
         if food_here > 0.8:
             eating = True
@@ -403,49 +410,15 @@ class Worm:
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
 
-        self.body[0] = (self.x, self.y)
-        self.vel[0] = (0.0, 0.0)
-
-        for i in range(2, SEGMENTS):
-
-            px, py = self.body[i - 1]
-            cx, cy = self.body[i]
-
-            dx = cx - px
-            dy = cy - py
-
-            dist = math.sqrt(dx * dx + dy * dy)
-
-            if dist == 0:
-                continue
-
-            diff = (dist - segment_length) / dist
-
-            offset_x = dx * diff * 0.5
-            offset_y = dy * diff * 0.5
-
-            px += offset_x
-            py += offset_y
-
-            cx -= offset_x
-            cy -= offset_y
-
-            px = max(0.0, min(WORLD_SIZE, px))
-            py = max(0.0, min(WORLD_SIZE, py))
-            cx = max(0.0, min(WORLD_SIZE, cx))
-            cy = max(0.0, min(WORLD_SIZE, cy))
-
-            self.body[i - 1] = (px, py)
-            self.body[i] = (cx, cy)
+        wave_dir = 1.0 if self.direction >= 0 else -1.0
+        self.wave_phase += dt * (3.0 + self.neurons["AVB"] * 2.0) * wave_dir
 
         for i in range(SEGMENTS):
-
-            phase = self.neural_phase - i * 0.45
-
-            activation = math.sin(phase)
-
-            self.muscle_left[i] = max(0.0, activation)
-            self.muscle_right[i] = max(0.0, -activation)
+            phase = self.wave_phase - i * 0.5
+            bend = math.sin(phase) * 0.4
+            self.segment_angle[i] = bend
+            self.muscle_left[i] = max(0.0, bend)
+            self.muscle_right[i] = max(0.0, -bend)
 
         wave_strength = 0
 
@@ -454,28 +427,123 @@ class Worm:
 
         wave_strength /= SEGMENTS
 
-        self.neural_phase += dt * (3.0 + self.neurons["AVB"] * 2.0)
-
-        target_speed = 40.0
-        self.speed = 0.9 * self.speed + 0.1 * target_speed
+        BASE_SPEED = 40.0
         serotonin = min(1.0, food_here * 4)
-        self.speed *= (0.7 + serotonin * 0.6)
-        move_speed = self.speed * self.gene_speed
-        if pheromone_here > 0.25:
-            move_speed *= 0.8
 
-        energy_loss = 0.02 * dt
-        if self.dauer:
-            move_speed *= 0.2
-            energy_loss *= 0.3
+        target_speed = 0.0
 
-        self.x += math.cos(self.angle) * move_speed * dt * self.direction
-        self.y += math.sin(self.angle) * move_speed * dt * self.direction
+        if self.state == "RUN":
+            forward_drive = self.neurons["AVB"]
+            target_speed = BASE_SPEED * (0.6 + forward_drive)
+            target_speed *= (0.7 + serotonin * 0.6)
+            target_speed *= self.gene_speed
+            if pheromone_here > 0.25:
+                target_speed *= 0.8
+            if self.dauer:
+                target_speed *= 0.2
 
-        self.energy -= energy_loss
+            self.angle += random.uniform(-0.03, 0.03)
+
+        head_vx, head_vy = self.vel[0]
+        head_vx *= GROUND_FRICTION
+        head_vy *= GROUND_FRICTION
+
+        target_vx = math.cos(self.angle) * target_speed * self.direction
+        target_vy = math.sin(self.angle) * target_speed * self.direction
+        drive_blend = min(1.0, dt * 6.0)
+        head_vx += (target_vx - head_vx) * drive_blend
+        head_vy += (target_vy - head_vy) * drive_blend
+
+        MAX_SPEED = 2.0
+        speed = math.sqrt(head_vx * head_vx + head_vy * head_vy)
+        if speed > MAX_SPEED:
+            head_vx *= MAX_SPEED / speed
+            head_vy *= MAX_SPEED / speed
+
+        self.x += head_vx * dt
+        self.y += head_vy * dt
+        self.vel[0] = (head_vx, head_vy)
 
         self.x = max(0, min(WORLD_SIZE, self.x))
         self.y = max(0, min(WORLD_SIZE, self.y))
+        self.body[0] = (self.x, self.y)
+
+        # Segment dynamics: spring constraints + muscle-driven lateral forces + ground friction.
+        for i in range(1, SEGMENTS):
+            px, py = self.body[i - 1]
+            cx, cy = self.body[i]
+            seg_vx, seg_vy = self.vel[i]
+
+            seg_vx *= GROUND_FRICTION
+            seg_vy *= GROUND_FRICTION
+
+            dx = cx - px
+            dy = cy - py
+            dist = math.sqrt(dx * dx + dy * dy)
+            if dist < 1e-6:
+                dist = 1e-6
+
+            MAX_SEGMENT = segment_length * 1.5
+            if dist > MAX_SEGMENT:
+                scale = MAX_SEGMENT / dist
+                dx *= scale
+                dy *= scale
+                cx = px + dx
+                cy = py + dy
+                dist = MAX_SEGMENT
+
+            stretch = dist - segment_length
+            seg_vx += -(dx / dist) * stretch * SEGMENT_SPRING * dt
+            seg_vy += -(dy / dist) * stretch * SEGMENT_SPRING * dt
+
+            bend = self.muscle_left[i] - self.muscle_right[i]
+            nx = -dy / dist
+            ny = dx / dist
+            seg_vx += nx * bend * MUSCLE_FORCE * dt
+            seg_vy += ny * bend * MUSCLE_FORCE * dt
+
+            speed = math.sqrt(seg_vx * seg_vx + seg_vy * seg_vy)
+            if speed > MAX_SPEED:
+                seg_vx *= MAX_SPEED / speed
+                seg_vy *= MAX_SPEED / speed
+
+            cx += seg_vx * dt
+            cy += seg_vy * dt
+
+            self.vel[i] = (seg_vx, seg_vy)
+            self.body[i] = (cx, cy)
+
+        for _ in range(2):
+            self.body[0] = (self.x, self.y)
+            for i in range(1, SEGMENTS):
+                px, py = self.body[i - 1]
+                cx, cy = self.body[i]
+                dx = cx - px
+                dy = cy - py
+                dist = math.sqrt(dx * dx + dy * dy)
+                if dist < 1e-6:
+                    continue
+
+                diff = (dist - segment_length) / dist
+                if i == 1:
+                    cx -= dx * diff
+                    cy -= dy * diff
+                else:
+                    px += dx * 0.5 * diff
+                    py += dy * 0.5 * diff
+                    cx -= dx * 0.5 * diff
+                    cy -= dy * 0.5 * diff
+                    self.body[i - 1] = (px, py)
+
+                cx = max(0.0, min(WORLD_SIZE, cx))
+                cy = max(0.0, min(WORLD_SIZE, cy))
+                self.body[i] = (cx, cy)
+
+        energy_loss = 0.02 * dt
+        if self.dauer:
+            energy_loss *= 0.3
+
+        self.energy -= energy_loss
 
         gx = int(self.x / WORLD_SIZE * GRID_SIZE)
         gy = int(self.y / WORLD_SIZE * GRID_SIZE)
@@ -506,24 +574,6 @@ class Worm:
         self.trail.append((self.x, self.y))
         if len(self.trail) > 100:
             self.trail.pop(0)
-
-        base_angle = self.angle
-        x, y = self.x, self.y
-
-        self.body[0] = (self.x, self.y)
-
-        for i in range(1, SEGMENTS):
-            bend = max(-1, min(1, self.muscle_left[i] - self.muscle_right[i]))
-            segment_angle = base_angle + bend * 0.25
-
-            x -= math.cos(segment_angle) * segment_length
-            y -= math.sin(segment_angle) * segment_length
-            self.body[i] = (
-                x,
-                y,
-            )
-
-        self.body[0] = (self.x, self.y)
 
         hx, hy = self.body[0]
         if (not math.isfinite(hx)) or (not math.isfinite(hy)):
@@ -597,21 +647,71 @@ class Worm:
         return True
 
     def smooth_body(self):
+        def catmull_rom(p0, p1, p2, p3, t):
+            t2 = t * t
+            t3 = t2 * t
+            x = 0.5 * (
+                (2.0 * p1[0])
+                + (-p0[0] + p2[0]) * t
+                + (2.0 * p0[0] - 5.0 * p1[0] + 4.0 * p2[0] - p3[0]) * t2
+                + (-p0[0] + 3.0 * p1[0] - 3.0 * p2[0] + p3[0]) * t3
+            )
+            y = 0.5 * (
+                (2.0 * p1[1])
+                + (-p0[1] + p2[1]) * t
+                + (2.0 * p0[1] - 5.0 * p1[1] + 4.0 * p2[1] - p3[1]) * t2
+                + (-p0[1] + 3.0 * p1[1] - 3.0 * p2[1] + p3[1]) * t3
+            )
+            return (x, y)
+
+        valid_points = []
+        for bx, by in self.body:
+            if (not math.isfinite(bx)) or (not math.isfinite(by)):
+                continue
+            valid_points.append((bx, by))
+
+        if len(valid_points) < 2:
+            return valid_points
+
+        max_gap = BASE_SEGMENT_LENGTH * max(self.size, 0.2) * 2.5
+        max_gap_sq = max_gap * max_gap
+        strips = []
+        current_strip = [valid_points[0]]
+
+        for p in valid_points[1:]:
+            dx = p[0] - current_strip[-1][0]
+            dy = p[1] - current_strip[-1][1]
+            if dx * dx + dy * dy > max_gap_sq:
+                if len(current_strip) >= 2:
+                    strips.append(current_strip)
+                current_strip = [p]
+            else:
+                current_strip.append(p)
+
+        if len(current_strip) >= 2:
+            strips.append(current_strip)
 
         smooth_points = []
+        interpolation_steps = 3
 
-        for i in range(len(self.body) - 1):
-            x1, y1 = self.body[i]
-            x2, y2 = self.body[i + 1]
-
-            if abs(x1 - x2) > 50 or abs(y1 - y2) > 50:
+        for strip in strips:
+            if len(strip) < 4:
+                smooth_points.extend(strip)
                 continue
 
-            smooth_points.append((x1, y1))
-            smooth_points.append(((x1 + x2) / 2, (y1 + y2) / 2))
+            padded = [strip[0]] + strip + [strip[-1]]
+            for i in range(1, len(padded) - 2):
+                p0 = padded[i - 1]
+                p1 = padded[i]
+                p2 = padded[i + 1]
+                p3 = padded[i + 2]
 
-        if self.body:
-            smooth_points.append(self.body[-1])
+                smooth_points.append(p1)
+                for step in range(1, interpolation_steps + 1):
+                    t = step / float(interpolation_steps + 1)
+                    smooth_points.append(catmull_rom(p0, p1, p2, p3, t))
+
+            smooth_points.append(strip[-1])
 
         return smooth_points
 
