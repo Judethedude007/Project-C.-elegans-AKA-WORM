@@ -45,12 +45,16 @@ class Egg:
         inherited_genes=None,
         inherited_genome=None,
         generation=0,
+        lineage_id=None,
     ):
         self.x = x % WORLD_SIZE
         self.y = y % WORLD_SIZE
         self.hatch_timer = random.uniform(30.0, 60.0)
         self.timer = self.hatch_timer
         self.generation = int(generation)
+        if lineage_id is None:
+            lineage_id = random.randint(0, 1000000)
+        self.lineage_id = int(lineage_id)
         if inherited_expression is None:
             inherited_expression = {
                 "foraging": 1.0,
@@ -122,6 +126,8 @@ class Worm:
             inherited_genes = {}
 
         self.generation = int(inherited_genes.get("generation", 0))
+        self.lineage_id = int(inherited_genes.get("lineage_id", random.randint(0, 1000000)))
+        self.color = self._lineage_color(self.lineage_id)
 
         base_gene_speed = float(
             inherited_genes.get("gene_speed", inherited_genes.get("speed", random.uniform(0.8, 1.2)))
@@ -252,6 +258,10 @@ class Worm:
             self.size = max(self.size, target_size)
 
     def _build_mutated_child_genes(self):
+        child_lineage_id = self.lineage_id
+        if random.random() < 0.02:
+            child_lineage_id = random.randint(0, 1000000)
+
         child_gene_speed = max(0.6, min(1.4, self.gene_speed * random.uniform(0.95, 1.05)))
         child_gene_food_sense = max(0.6, min(1.4, self.gene_food_sense * random.uniform(0.95, 1.05)))
         child_gene_phero_sense = max(0.6, min(1.4, self.gene_phero_sense * random.uniform(0.95, 1.05)))
@@ -271,9 +281,19 @@ class Worm:
             "reproduction_energy": child_gene_reproduction_energy,
             "turn_bias": self.genome["turn_bias"],
             "energy_efficiency": self.genome["energy_efficiency"],
+            "lineage_id": child_lineage_id,
             "generation": self.generation + 1,
         }
         return child_genes
+
+    @staticmethod
+    def _lineage_color(lineage_id):
+        rng = random.Random(int(lineage_id))
+        return (
+            rng.randint(120, 255) / 255.0,
+            rng.randint(120, 255) / 255.0,
+            rng.randint(120, 255) / 255.0,
+        )
 
     def update(self, world, dt=1 / 60, new_worms=None, new_eggs=None):
 
@@ -538,8 +558,8 @@ class Worm:
         drive_blend = min(1.0, dt * 6.0)
         head_vx += (target_vx - head_vx) * drive_blend
         head_vy += (target_vy - head_vy) * drive_blend
-        head_vx *= 0.92
-        head_vy *= 0.92
+        head_vx *= 0.9
+        head_vy *= 0.9
 
         MAX_SPEED = 6.0
         speed = math.sqrt(head_vx * head_vx + head_vy * head_vy)
@@ -592,8 +612,8 @@ class Worm:
             ny = dx / dist
             seg_vx += nx * bend * MUSCLE_FORCE * dt
             seg_vy += ny * bend * MUSCLE_FORCE * dt
-            seg_vx *= 0.92
-            seg_vy *= 0.92
+            seg_vx *= 0.9
+            seg_vy *= 0.9
 
             speed = math.sqrt(seg_vx * seg_vx + seg_vy * seg_vy)
             if speed > MAX_SPEED:
@@ -717,6 +737,7 @@ class Worm:
                 inherited_genome=child_genes,
                 inherited_genes=child_genes,
                 generation=self.generation + 1,
+                lineage_id=child_genes.get("lineage_id", self.lineage_id),
             )
             if new_eggs is not None:
                 new_eggs.append(egg)
@@ -731,6 +752,9 @@ class Worm:
                 baby.energy = 40
                 baby.age = 0
                 baby.stage = "juvenile"
+                baby.generation = int(getattr(egg, "generation", self.generation + 1))
+                baby.lineage_id = int(getattr(egg, "lineage_id", self.lineage_id))
+                baby.color = self._lineage_color(baby.lineage_id)
                 new_worms.append(baby)
             else:
                 return True

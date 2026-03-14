@@ -21,12 +21,14 @@ ZOOM_MIN = 0.5
 ZOOM_MAX = 20.0
 CAMERA_STEP = 12.0
 WORM_THICKNESS_SCALE = 2.0 / 3.0
+TARGET_FPS = 60
 
 pygame.init()
 
 screen = pygame.display.set_mode(
     (SCREEN_WIDTH, SCREEN_HEIGHT),
-    pygame.OPENGL | pygame.DOUBLEBUF,
+    pygame.OPENGL | pygame.DOUBLEBUF | pygame.HWSURFACE,
+    vsync=1,
 )
 pygame.display.set_caption("Worm Simulator GPU")
 
@@ -132,11 +134,10 @@ def build_tapered_mesh(points, base_width):
 
 while running:
 
-    frame_time = clock.get_time() / 1000.0
-    if frame_time <= 0:
-        frame_time = 1 / 60
-
-    dt = frame_time * simulation_speed
+    dt = clock.tick(TARGET_FPS) / 1000.0
+    if dt <= 0:
+        dt = 1.0 / TARGET_FPS
+    dt *= simulation_speed
 
     for event in pygame.event.get():
         if imgui_renderer:
@@ -219,6 +220,8 @@ while running:
             larva.age = 0
             larva.stage = "juvenile"
             larva.generation = int(getattr(egg, "generation", 0))
+            larva.lineage_id = int(getattr(egg, "lineage_id", getattr(larva, "lineage_id", 0)))
+            larva.color = larva._lineage_color(larva.lineage_id)
             hatched_worms.append(larva)
         else:
             active_eggs.append(egg)
@@ -271,14 +274,7 @@ while running:
             if getattr(worm, "dauer", False):
                 color = (0.35, 0.55, 1.0)
             else:
-                speed_t = max(0.0, min(1.0, worm.gene_speed))
-                food_t = max(0.0, min(1.0, worm.gene_food_sense))
-                pher_t = max(0.0, min(1.0, worm.gene_phero_sense))
-                color = (
-                    speed_t,
-                    food_t,
-                    pher_t,
-                )
+                color = tuple(getattr(worm, "color", (0.8, 0.8, 0.8)))
 
             max_gap = SEGMENT_LENGTH * 2.0
             strips = split_by_gap(points, max_gap)
@@ -444,6 +440,13 @@ while running:
     avg_energy = (sum(w.energy for w in worms) / len(worms)) if worms else 0.0
     total_food = float(np.sum(world.food))
     total_pheromone = float(np.sum(world.pheromone))
+    lineage_counts = {}
+    for worm in worms:
+        lineage_id = int(getattr(worm, "lineage_id", -1))
+        lineage_counts[lineage_id] = lineage_counts.get(lineage_id, 0) + 1
+    total_lineages = len(lineage_counts)
+    dominant_lineage = max(lineage_counts, key=lineage_counts.get) if lineage_counts else -1
+    largest_colony = max(lineage_counts.values()) if lineage_counts else 0
 
     if imgui_renderer:
         imgui_renderer.process_inputs()
@@ -459,6 +462,9 @@ while running:
         imgui.text(f"Pheromone Total: {total_pheromone:.1f}")
         imgui.text(f"Births/s: {births_per_sec:.2f}")
         imgui.text(f"Deaths/s: {deaths_per_sec:.2f}")
+        imgui.text(f"Dominant lineage: {dominant_lineage}")
+        imgui.text(f"Largest colony: {largest_colony} worms")
+        imgui.text(f"Total lineages: {total_lineages}")
         imgui.text(f"Speed: {simulation_speed:.1f}x")
         imgui.text(f"View: {view_mode} (1:Eco 2:Chem 3:Phero)")
         imgui.text(f"Zoom: {zoom:.2f}")
@@ -472,11 +478,11 @@ while running:
             f"Births:{total_births} Deaths:{total_deaths} AvgEnergy:{avg_energy:.1f} "
             f"Food:{total_food:.0f} Phero:{total_pheromone:.0f} "
             f"B/s:{births_per_sec:.2f} D/s:{deaths_per_sec:.2f} "
+            f"DomLineage:{dominant_lineage} Largest:{largest_colony} Lineages:{total_lineages} "
             f"Speed:{simulation_speed:.1f}x View:{view_mode} Zoom:{zoom:.2f}"
         )
 
     pygame.display.flip()
-    clock.tick(60)
 
 if imgui_renderer:
     imgui_renderer.shutdown()
