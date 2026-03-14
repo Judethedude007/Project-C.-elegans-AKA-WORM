@@ -60,6 +60,7 @@ class Worm:
         self.neural_phase = 0.0
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
+        self.direction = 1
         self.vx = 0.0
         self.vy = 0.0
         self.speed = 40.0
@@ -72,6 +73,12 @@ class Worm:
         self.prev_food_signal = 0.0
         self.repro_timer = 0.0
         self.run_timer = random.uniform(2.0, 6.0)
+        self.neuron_aiy = 0.0
+        self.neuron_aiz = 0.0
+        self.neuron_avb = 0.0
+        self.neuron_ava = 0.0
+        self.syn_food = random.uniform(0.3, 0.7)
+        self.syn_pheromone = random.uniform(0.3, 0.7)
 
         if genes is None:
             genes = {
@@ -152,7 +159,6 @@ class Worm:
             return False
 
         self.time += dt
-        self.neural_phase += dt * 3.0
         self.age += dt
         self.repro_timer -= dt
         self._update_stage()
@@ -211,6 +217,38 @@ class Worm:
         food_signal = (food_here + left_food + right_food) / 3.0
         food_gradient = food_signal - self.prev_food_signal
         self.prev_food_signal = food_signal
+
+        margin = 40
+        min_edge_distance = min(self.x, world.width - self.x, self.y, world.height - self.y)
+        food_left = left_food
+        food_right = right_food
+        pheromone = pheromone_here
+        oxygen = max(0.0, min(1.0, 1.0 - food_signal / 5.0))
+        touch = max(0.0, min(1.0, (margin - min_edge_distance) / margin)) * 3.0
+
+        sensor_food = max(-1.0, min(1.0, food_left - food_right))
+        sensor_pheromone = max(0.0, min(1.0, pheromone))
+        sensor_oxygen = oxygen
+        sensor_touch = touch
+
+        self.syn_food += sensor_food * 0.0001
+        self.syn_pheromone += sensor_pheromone * 0.00005
+        self.syn_food = max(0.0, min(1.0, self.syn_food))
+        self.syn_pheromone = max(0.0, min(1.0, self.syn_pheromone))
+
+        weighted_food = sensor_food * self.syn_food
+        weighted_pheromone = sensor_pheromone * self.syn_pheromone
+        self.neuron_aiy = 0.6 * weighted_food + 0.2 * weighted_pheromone - 0.1 * sensor_oxygen
+        self.neuron_aiz = -0.5 * weighted_food + 0.3 * sensor_touch + 0.1 * sensor_oxygen
+        self.neuron_avb = max(0.0, self.neuron_aiy)
+        self.neuron_ava = max(0.0, self.neuron_aiz)
+
+        if self.neuron_ava > 0.6:
+            self.direction = -1
+        elif self.neuron_avb > 0.2:
+            self.direction = 1
+
+        turn_bias = sensor_food * 0.4 + sensor_pheromone * 0.2
 
         self.run_timer -= dt
         if food_gradient > 0:
@@ -290,8 +328,8 @@ class Worm:
         if abs(turn_combined) < 0.01:
             self.angular_velocity *= 0.6
         self.angular_velocity += turn_combined
+        self.angular_velocity += turn_bias
 
-        margin = 40
         if self.x < margin:
             self.angular_velocity += 0.05
         if self.x > world.width - margin:
@@ -360,11 +398,13 @@ class Worm:
 
         wave_strength /= SEGMENTS
 
+        self.neural_phase += dt * (3.0 + self.neuron_avb * 2.0)
+
         target_speed = 40.0
         self.speed = 0.9 * self.speed + 0.1 * target_speed
 
-        self.x += math.cos(self.angle) * self.speed * dt
-        self.y += math.sin(self.angle) * self.speed * dt
+        self.x += math.cos(self.angle) * self.speed * dt * self.direction
+        self.y += math.sin(self.angle) * self.speed * dt * self.direction
 
         self.x = max(0, min(WORLD_SIZE, self.x))
         self.y = max(0, min(WORLD_SIZE, self.y))
