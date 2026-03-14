@@ -73,6 +73,7 @@ class Worm:
         self.prev_food_signal = 0.0
         self.repro_timer = 0.0
         self.run_timer = random.uniform(2.0, 6.0)
+        self.dauer = False
         self.neuron_aiy = 0.0
         self.neuron_aiz = 0.0
         self.neuron_avb = 0.0
@@ -187,11 +188,8 @@ class Worm:
         eating = False
         feed_gx = int(self.x / WORLD_SIZE * GRID_SIZE)
         feed_gy = int(self.y / WORLD_SIZE * GRID_SIZE)
-        food_here = 0.0
-        if 0 <= feed_gx < GRID_SIZE and 0 <= feed_gy < GRID_SIZE:
-            food_here = float(world.food[feed_gx, feed_gy])
-
-        pheromone_here = world.sample_pheromone(self.x, self.y)
+        food_here = world.get_food(self.x, self.y)
+        pheromone_here = world.get_pheromone(self.x, self.y)
 
         left_food = world.sample_food(
             self.x + math.cos(self.angle + 0.3) * 8,
@@ -204,15 +202,10 @@ class Worm:
 
         food_turn = (left_food - right_food) * 0.05
 
-        left_pheromone = world.sample_pheromone(
-            self.x + math.cos(self.angle + 0.3) * 8,
-            self.y + math.sin(self.angle + 0.3) * 8,
-        )
-        right_pheromone = world.sample_pheromone(
-            self.x + math.cos(self.angle - 0.3) * 8,
-            self.y + math.sin(self.angle - 0.3) * 8,
-        )
-        pheromone_turn = (left_pheromone - right_pheromone) * 0.03
+        pher_left = world.get_pheromone(*left_sensor_pos)
+        pher_right = world.get_pheromone(*right_sensor_pos)
+        pher_gradient = pher_right - pher_left
+        pheromone_turn = pher_gradient * 0.3
 
         food_signal = (food_here + left_food + right_food) / 3.0
         food_gradient = food_signal - self.prev_food_signal
@@ -230,6 +223,14 @@ class Worm:
         sensor_pheromone = max(0.0, min(1.0, pheromone))
         sensor_oxygen = oxygen
         sensor_touch = touch
+
+        if food_here < 0.02 and pheromone_here > 0.4:
+            if random.random() < 0.002:
+                self.dauer = True
+
+        if self.dauer:
+            self.stage = "dauer"
+            self.size = min(self.size, 0.35)
 
         self.syn_food += sensor_food * 0.0001
         self.syn_pheromone += sensor_pheromone * 0.00005
@@ -266,12 +267,6 @@ class Worm:
             self.behavior = "dwell"
         elif food_signal < 0.3:
             self.behavior = "roam"
-
-        if food_signal < 0.1 and pheromone_here > 0.5:
-            self.stage = "dauer"
-            self.size = min(self.size, 0.35)
-        elif self.stage == "dauer" and (food_signal > 0.6 or pheromone_here < 0.2):
-            self.stage = "L4"
 
         stress_target = max(0.0, min(1.0, pheromone_here / 2.0 - food_signal * 0.2))
         liquid_level = world.sample_medium(self.x, self.y)
@@ -319,15 +314,17 @@ class Worm:
             self.angle += random.uniform(-0.3, 0.3)
 
         random_turn = random.uniform(-0.02, 0.02)
+        if pheromone_here > 0.25:
+            random_turn *= 0.3
         turn_combined = (
             0.6 * food_turn
-            + 0.25 * pheromone_turn
             + 0.15 * random_turn
         )
         self.angular_velocity *= 0.75
         if abs(turn_combined) < 0.01:
             self.angular_velocity *= 0.6
         self.angular_velocity += turn_combined
+        self.angular_velocity += pheromone_turn
         self.angular_velocity += turn_bias
 
         if self.x < margin:
@@ -344,8 +341,6 @@ class Worm:
 
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
-
-        self.energy -= 0.02 * dt
 
         self.body[0] = (self.x, self.y)
         self.vel[0] = (0.0, 0.0)
@@ -402,9 +397,18 @@ class Worm:
 
         target_speed = 40.0
         self.speed = 0.9 * self.speed + 0.1 * target_speed
+        if pheromone_here > 0.25:
+            self.speed *= 0.8
+
+        energy_loss = 0.02 * dt
+        if self.dauer:
+            self.speed *= 0.2
+            energy_loss *= 0.3
 
         self.x += math.cos(self.angle) * self.speed * dt * self.direction
         self.y += math.sin(self.angle) * self.speed * dt * self.direction
+
+        self.energy -= energy_loss
 
         self.x = max(0, min(WORLD_SIZE, self.x))
         self.y = max(0, min(WORLD_SIZE, self.y))
@@ -415,7 +419,7 @@ class Worm:
 
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
 
-            if world.food[gx, gy] > 0 and self.stage != "dauer":
+            if world.food[gx, gy] > 0 and not self.dauer:
 
                 eaten = min(0.2, world.food[gx, gy])
 

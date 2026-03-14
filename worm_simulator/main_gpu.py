@@ -172,7 +172,9 @@ while running:
             strip.append([x, y])
         if strip:
             energy = worm.energy
-            if energy < 60.0:
+            if getattr(worm, "dauer", False):
+                color = (0.35, 0.55, 1.0)
+            elif energy < 60.0:
                 t = max(0.0, min(energy / 60.0, 1.0))
                 color = (1.0, 0.2 + 0.8 * t, 0.2 + 0.8 * t)
             elif energy > 140.0:
