@@ -26,6 +26,8 @@ TARGET_FPS = 60
 FIXED_DT = 1.0 / 60.0
 RENDER_GRID_STEP = 4
 DEBUG_VISIBILITY_LOG_INTERVAL = 1.0
+CAMERA_SMOOTHING = 0.05
+TRAIL_STEPS = 28
 
 pygame.init()
 
@@ -286,11 +288,13 @@ while running:
     if worms:
         if follow_mode:
             target = worms[follow_index % len(worms)]
-            camera_x = target.x
-            camera_y = target.y
+            camera_x += (target.x - camera_x) * CAMERA_SMOOTHING
+            camera_y += (target.y - camera_y) * CAMERA_SMOOTHING
         else:
-            camera_x = sum(w.x for w in worms) / len(worms)
-            camera_y = sum(w.y for w in worms) / len(worms)
+            avg_x = sum(w.x for w in worms) / len(worms)
+            avg_y = sum(w.y for w in worms) / len(worms)
+            camera_x += (avg_x - camera_x) * CAMERA_SMOOTHING
+            camera_y += (avg_y - camera_y) * CAMERA_SMOOTHING
 
     camera_x = max(0.0, min(camera_x, float(WORLD_SIZE)))
     camera_y = max(0.0, min(camera_y, float(WORLD_SIZE)))
@@ -440,6 +444,40 @@ while running:
             if not worm.body:
                 continue
 
+            worm_rgb = tuple(int(max(0.0, min(1.0, c)) * 255) for c in getattr(worm, "color", (0.8, 0.8, 0.8)))
+            trail_points = worm.trail[-TRAIL_STEPS:]
+            trail_count = len(trail_points)
+            if trail_count >= 2:
+                for i in range(1, trail_count):
+                    prev = trail_points[i - 1]
+                    curr = trail_points[i]
+                    fade = i / float(trail_count - 1)
+
+                    prev_norm_x = (prev[0] / WORLD_SIZE) * world_scale
+                    prev_norm_y = (prev[1] / WORLD_SIZE) * world_scale
+                    curr_norm_x = (curr[0] / WORLD_SIZE) * world_scale
+                    curr_norm_y = (curr[1] / WORLD_SIZE) * world_scale
+
+                    prev_clip_x = (prev_norm_x - camera_norm_x) * zoom
+                    prev_clip_y = (prev_norm_y - camera_norm_y) * zoom
+                    curr_clip_x = (curr_norm_x - camera_norm_x) * zoom
+                    curr_clip_y = (curr_norm_y - camera_norm_y) * zoom
+
+                    px = (prev_clip_x * 0.5 + 0.5) * SCREEN_WIDTH
+                    py = (0.5 - prev_clip_y * 0.5) * SCREEN_HEIGHT
+                    cx = (curr_clip_x * 0.5 + 0.5) * SCREEN_WIDTH
+                    cy = (0.5 - curr_clip_y * 0.5) * SCREEN_HEIGHT
+
+                    if (
+                        0 <= px < SCREEN_WIDTH
+                        and 0 <= py < SCREEN_HEIGHT
+                        and 0 <= cx < SCREEN_WIDTH
+                        and 0 <= cy < SCREEN_HEIGHT
+                    ):
+                        trail_color = tuple(max(16, int(channel * (0.15 + 0.55 * fade))) for channel in worm_rgb)
+                        trail_width = max(1, int((0.6 + 1.6 * fade) * max(1.0, zoom * 0.25)))
+                        pygame.draw.line(screen, trail_color, (int(px), int(py)), (int(cx), int(cy)), trail_width)
+
             hx, hy = worm.body[0]
             head_x = (hx / WORLD_SIZE) * world_scale
             head_y = (hy / WORLD_SIZE) * world_scale
@@ -455,17 +493,24 @@ while running:
                 # draw worm head
                 pygame.draw.circle(
                     screen,
-                    (255, 120, 120),
+                    worm_rgb,
                     (int(hx), int(hy)),
                     radius,
                 )
-                # Optional high-contrast marker so worms stay easy to track.
+
+                glow_radius = max(radius + 1, int(radius * 1.45))
+                pygame.draw.circle(
+                    screen,
+                    (180, 180, 180),
+                    (int(hx), int(hy)),
+                    glow_radius,
+                    1,
+                )
                 pygame.draw.circle(
                     screen,
                     (255, 255, 255),
                     (int(hx), int(hy)),
-                    max(2, int(3 * zoom)),
-                    1,
+                    max(2, int(2 + zoom * 0.35)),
                 )
 
         # draw eggs as small red circles

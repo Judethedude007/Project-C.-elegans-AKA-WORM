@@ -116,14 +116,12 @@ class Worm:
         self.run_timer = 0.0
         self.dauer = False
         self.neurons = {
-            "food": 0.0,
-            "pheromone": 0.0,
-            "oxygen": 0.0,
-            "interA": 0.0,
-            "interB": 0.0,
-            "forward": 0.0,
-            "turnL": 0.0,
-            "turnR": 0.0,
+            "ASE": 0.0,
+            "AWC": 0.0,
+            "AIY": 0.0,
+            "AIZ": 0.0,
+            "AVB": 0.0,
+            "AVA": 0.0,
         }
 
         if inherited_genes is None:
@@ -540,44 +538,22 @@ class Worm:
         local_density = world.count_worms_near(self.x, self.y, radius=20)
         collision_signal = max(touch, max(0.0, min(1.0, (local_density - 1.0) / 10.0)))
 
+        pheromone_input_here = 0.0
         if 0 <= feed_gx < GRID_SIZE and 0 <= feed_gy < GRID_SIZE:
-            self.neurons["food"] = float(world.food[feed_gx, feed_gy])
-            self.neurons["pheromone"] = float(world.pheromone[feed_gx, feed_gy])
-            self.neurons["oxygen"] = float(world.oxygen[feed_gx, feed_gy])
-        else:
-            self.neurons["food"] = 0.0
-            self.neurons["pheromone"] = 0.0
-            self.neurons["oxygen"] = 1.0
+            pheromone_input_here = float(world.pheromone[feed_gx, feed_gy])
 
-        self.neurons["food"] = max(0.0, min(1.0, self.neurons["food"]))
-        self.neurons["pheromone"] = max(0.0, min(1.0, self.neurons["pheromone"] / 1000.0))
-        self.neurons["oxygen"] = max(0.0, min(1.0, self.neurons["oxygen"]))
+        # Phase 19 reduced connectome: ASE/AWC sensory inputs to AIY/AIZ interneurons, then AVB/AVA motor drives.
+        self.neurons["ASE"] = max(0.0, min(1.0, food_signal))
+        self.neurons["AWC"] = max(0.0, min(1.0, pheromone_input_here / 1000.0))
+        self.neurons["AIY"] = math.tanh(0.8 * self.neurons["ASE"])
+        self.neurons["AIZ"] = math.tanh(0.6 * self.neurons["AWC"])
+        self.neurons["AVB"] = max(0.0, self.neurons["AIY"])
+        self.neurons["AVA"] = max(0.0, self.neurons["AIZ"] - self.neurons["AIY"])
 
-        self.neurons["interA"] = (
-            0.6 * self.neurons["food"]
-            - 0.3 * self.neurons["oxygen"]
-        )
-        self.neurons["interB"] = (
-            0.5 * self.neurons["pheromone"]
-        )
-        self.neurons["interA"] = math.tanh(self.neurons["interA"])
-        self.neurons["interB"] = math.tanh(self.neurons["interB"])
-
-        self.neurons["forward"] = max(
-            0.0,
-            0.7 * self.neurons["interA"],
-        )
-        self.neurons["turnL"] = max(
-            0.0,
-            0.5 * self.neurons["interB"],
-        )
-        self.neurons["turnR"] = max(
-            0.0,
-            -0.5 * self.neurons["interB"],
-        )
-
-        turn = self.neurons["turnR"] - self.neurons["turnL"]
-        pheromone_signal_here = self.neurons["pheromone"]
+        forward_drive = min(1.0, 0.2 + self.neurons["AVB"])
+        reverse_drive = max(0.0, self.neurons["AVA"])
+        turn = food_turn + pheromone_turn + reverse_drive * 0.25
+        pheromone_signal_here = self.neurons["AWC"]
 
         if (not self.dauer) and food_here < 0.05 and pheromone_signal_here > 0.2 and self.energy < 80:
             self.dauer = True
@@ -587,7 +563,7 @@ class Worm:
         if self.dauer and food_here > 0.15:
             self.dauer = False
 
-        self.direction = 1
+        self.direction = -1 if reverse_drive > 0.45 else 1
         turn_bias = turn * 0.4 + collision_signal * 0.15
 
         self.run_timer += dt
@@ -640,7 +616,7 @@ class Worm:
         turn_signal = turn
         self.angular_velocity *= 0.6
         self.angular_velocity += turn_signal
-        self.forward_signal = max(0.0, self.neurons["forward"])
+        self.forward_signal = max(0.0, forward_drive)
         self.turn_signal = turn_signal
         if abs(turn_signal) < 0.01:
             self.angular_velocity *= 0.7
@@ -697,7 +673,7 @@ class Worm:
         target_speed = 0.0
 
         if self.state == "RUN":
-            speed = BASE_SPEED * self.neurons["forward"]
+            speed = BASE_SPEED * forward_drive
             target_speed = speed
             target_speed *= (0.7 + serotonin * 0.6)
             target_speed *= self.gene_speed
