@@ -559,12 +559,15 @@ class Worm:
         drive_blend = min(1.0, dt * 6.0)
         head_vx += (target_vx - head_vx) * drive_blend
         head_vy += (target_vy - head_vy) * drive_blend
+        head_vx *= 0.92
+        head_vy *= 0.92
 
-        MAX_SPEED = 2.0
+        MAX_SPEED = 6.0
         speed = math.sqrt(head_vx * head_vx + head_vy * head_vy)
         if speed > MAX_SPEED:
-            head_vx *= MAX_SPEED / speed
-            head_vy *= MAX_SPEED / speed
+            scale = MAX_SPEED / speed
+            head_vx *= scale
+            head_vy *= scale
 
         self.x += head_vx * dt
         self.y += head_vy * dt
@@ -599,19 +602,25 @@ class Worm:
                 dist = MAX_SEGMENT
 
             stretch = dist - segment_length
-            seg_vx += -(dx / dist) * stretch * SEGMENT_SPRING * dt
-            seg_vy += -(dy / dist) * stretch * SEGMENT_SPRING * dt
+            spring_force = -stretch * SEGMENT_SPRING
+            MAX_FORCE = 2.5
+            spring_force = max(-MAX_FORCE, min(MAX_FORCE, spring_force))
+            seg_vx += (dx / dist) * spring_force * dt
+            seg_vy += (dy / dist) * spring_force * dt
 
             bend = self.segment_angle[i]
             nx = -dy / dist
             ny = dx / dist
             seg_vx += nx * bend * MUSCLE_FORCE * dt
             seg_vy += ny * bend * MUSCLE_FORCE * dt
+            seg_vx *= 0.92
+            seg_vy *= 0.92
 
             speed = math.sqrt(seg_vx * seg_vx + seg_vy * seg_vy)
             if speed > MAX_SPEED:
-                seg_vx *= MAX_SPEED / speed
-                seg_vy *= MAX_SPEED / speed
+                scale = MAX_SPEED / speed
+                seg_vx *= scale
+                seg_vy *= scale
 
             cx += seg_vx * dt
             cy += seg_vy * dt
