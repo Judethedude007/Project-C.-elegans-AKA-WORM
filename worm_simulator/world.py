@@ -23,10 +23,10 @@ class World:
 
         self._world_to_food_idx = np.linspace(0, GRID_SIZE - 1, WORLD_SIZE).astype(np.int32)
 
-        for _ in range(10):
+        for _ in range(6):
             cx = random.uniform(100.0, WORLD_SIZE - 100.0)
             cy = random.uniform(100.0, WORLD_SIZE - 100.0)
-            self._add_food_gaussian(cx, cy)
+            self._add_food_gaussian(cx, cy, 120, 80)
             self.food_patches.append({"x": cx, "y": cy})
 
         np.clip(self.food, 0.0, 1.0, out=self.food)

@@ -208,7 +208,9 @@ class Worm:
         return left, right, up, down
 
     def _update_stage(self):
-        if self.stage == "dauer":
+        if self.dauer:
+            self.stage = "dauer"
+            self.size = min(self.size, 0.35)
             return
 
         if self.age > 40.0:
@@ -250,7 +252,8 @@ class Worm:
             return False
 
         self.time += dt
-        self.age += dt
+        if not self.dauer:
+            self.age += dt
         self.repro_timer -= dt
         self._update_stage()
         segment_length = BASE_SEGMENT_LENGTH * self.size
@@ -331,13 +334,13 @@ class Worm:
         self.neurons["AWA"] = food_signal
         self.neurons["ASH"] = collision_signal
 
-        if food_here < 0.02 and pheromone_here > 0.4:
-            if random.random() < 0.002:
-                self.dauer = True
-
-        if self.dauer:
+        if (not self.dauer) and food_here < 0.05 and pheromone_here > 0.2 and self.energy < 80:
+            self.dauer = True
             self.stage = "dauer"
             self.size = min(self.size, 0.35)
+
+        if self.dauer and food_here > 0.15:
+            self.dauer = False
 
         self.neurons["AIY"] = (
             self.syn[("ASE", "AIY")] * self.neurons["ASE"]
@@ -426,6 +429,8 @@ class Worm:
         random_turn = random.uniform(-0.02, 0.02)
         if pheromone_here > 0.25:
             random_turn *= 0.3
+        if self.dauer:
+            random_turn *= 2.0
         turn_combined = (
             0.45 * food_turn
             + 0.2 * pheromone_turn
@@ -604,7 +609,7 @@ class Worm:
         efficiency = max(0.6, self.genome["energy_efficiency"])
         energy_loss = (0.015 / efficiency) * dt
         if self.dauer:
-            energy_loss *= 0.3
+            energy_loss *= 0.1
 
         self.energy -= energy_loss
 
@@ -663,7 +668,7 @@ class Worm:
         if local_density > 20:
             self.energy -= 0.2 * dt
 
-        if self.stage == "adult" and self.energy > self.gene_reproduction_energy and self.repro_timer <= 0:
+        if (not self.dauer) and self.stage == "adult" and self.energy > self.gene_reproduction_energy and self.repro_timer <= 0:
             persistence = random.uniform(0.20, 0.34)
             inherited_expression = {
                 "foraging": (1.0 - persistence) * 1.0 + persistence * self.gene_expression["foraging"],
