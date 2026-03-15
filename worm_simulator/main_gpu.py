@@ -75,7 +75,7 @@ UI_STATS_COUNT = 32
 UI_HELP_COUNT = 10
 BACKGROUND_STAR_COUNT = 200
 GRID_OVERLAY_STEP = 80
-ENVIRONMENT_SLIDERS = ("temperature", "water", "oxygen", "food_growth", "season_speed")
+ENVIRONMENT_SLIDERS = ("temperature", "water", "oxygen", "food_growth")
 EVOLUTION_SLIDERS = ("mutation",)
 SIMULATION_SLIDERS = ("sim_speed",)
 
@@ -287,6 +287,9 @@ def update_ui_layout(scroll_offset):
         # Place the climate button below the export graph button
         climate_button.rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 30)
         ui_y += UI_BUTTON_STEP
+        # Place the season speed slider directly under the climate button
+        control_sliders["season_speed"].rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 20)
+        ui_y += UI_SLIDER_STEP
         ui_y += UI_SECTION_GAP
 
     section_buttons["stats"].rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 26)
@@ -1127,11 +1130,14 @@ while running:
 
         if not section_collapsed["simulation"]:
             for slider_key in SIMULATION_SLIDERS:
-                control_sliders[slider_key].draw(ui_surface, font, small_font)
+                if slider_key != "season_speed":
+                    control_sliders[slider_key].draw(ui_surface, font, small_font)
             export_graph_button.draw(ui_surface, small_font)
             # Draw the climate toggle button
             climate_button.label = ("Disable Climate" if world.climate_enabled else "Enable Climate")
             climate_button.draw(ui_surface, small_font)
+            # Draw the season speed slider directly under the climate button
+            control_sliders["season_speed"].draw(ui_surface, font, small_font)
 
         stats_groups = [
             (
