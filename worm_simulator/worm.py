@@ -909,7 +909,7 @@ class Worm:
             target_speed *= (0.7 + serotonin * 0.6)
             target_speed *= self.gene_speed
             target_speed *= water_level
-            energy_scale = max(0.1, min(1.0, self.energy / 500.0))
+            energy_scale = max(0.2, min(1.0, self.energy / 500.0))
             target_speed *= energy_scale
             if pheromone_here > 0.25:
                 target_speed *= 0.8
@@ -917,6 +917,17 @@ class Worm:
                 target_speed = 0.0
 
             self.angle += random.uniform(-0.03, 0.03)
+                # --- Starvation wandering behaviour ---
+            if food_here < 0.03:
+                # worms increase roaming when starving
+                target_speed *= 1.6
+
+                # add more random exploration
+                self.angle += random.uniform(-0.25, 0.25)
+
+                # ignore pheromone trails when starving
+                pheromone_turn *= 0.3
+                
 
         # --- Energy loss from movement (seasonal metabolism) ---
         metabolism = world.season_effects[world.current_season]["metabolism"]
