@@ -117,6 +117,8 @@ class Worm:
         self.run_timer = 0.0
         self.dauer = False
         self.environment_mutation_rate = float(MUTATION_RATE)
+        self.cpg_frequency_scale = 1.0
+        self.cpg_amplitude_scale = 1.0
         self.neurons = {
             "ASE": 0.0,
             "AWC": 0.0,
@@ -697,8 +699,8 @@ class Worm:
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
 
-        self.wave_freq = 1.5 + 0.8 * self.forward_signal
-        self.wave_amp = 0.25 + 0.15 * abs(self.turn_signal)
+        self.wave_freq = (1.5 + 0.8 * self.forward_signal) * max(0.2, self.cpg_frequency_scale)
+        self.wave_amp = (0.25 + 0.15 * abs(self.turn_signal)) * max(0.2, self.cpg_amplitude_scale)
         self.wave_phase += dt * self.wave_freq
 
         phase_offset = -WAVE_SPACING

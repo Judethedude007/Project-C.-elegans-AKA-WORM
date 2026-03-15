@@ -26,6 +26,7 @@ from config import (
     FOOD_GROWTH_RATE,
     MUTATION_RATE,
     SEASON_SPEED,
+    SIMULATION_MODE,
 )
 from gpu_renderer import GPURenderer
 
@@ -44,9 +45,16 @@ WINDOW_WIDTH = SCREEN_WIDTH
 WINDOW_HEIGHT = SCREEN_HEIGHT
 CAMERA_MODE_FREE = 0
 CAMERA_MODE_DOMINANT = 1
+MODE_ECOSYSTEM = "ecosystem"
+MODE_SINGLE = "single"
+
+# Keep world rendering robust on Windows by defaulting to software 2D composition.
+USE_OPENGL_WORLD = False
 
 pygame.init()
-display_flags = pygame.OPENGL | pygame.DOUBLEBUF | pygame.HWSURFACE
+display_flags = pygame.DOUBLEBUF | pygame.HWSURFACE
+if USE_OPENGL_WORLD:
+    display_flags |= pygame.OPENGL
 screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), display_flags, vsync=1)
 pygame.display.set_caption("Worm Simulator GPU")
 font = pygame.font.Font(None, 24)
@@ -56,6 +64,7 @@ screen_width, screen_height = screen.get_size()
 world_view_width = max(1, screen_width - UI_WIDTH)
 world_surface = pygame.Surface((world_view_width, screen_height), flags=pygame.SRCALPHA)
 ui_surface = pygame.Surface((UI_WIDTH, screen_height), flags=pygame.SRCALPHA)
+show_ui = True
 
 if IMGUI_AVAILABLE:
     imgui.create_context()
@@ -108,6 +117,24 @@ class Slider:
         surface.blit(text, (self.rect.x, self.rect.y - 20))
 
 
+class UIButton:
+
+    def __init__(self, x, y, width, height, label):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.label = label
+
+    def draw(self, surface, text_font, selected=False):
+        bg = (75, 95, 135) if selected else (58, 58, 68)
+        border = (180, 195, 225) if selected else (100, 100, 115)
+        pygame.draw.rect(surface, bg, self.rect, border_radius=6)
+        pygame.draw.rect(surface, border, self.rect, width=1, border_radius=6)
+        text = text_font.render(self.label, True, (235, 235, 235))
+        surface.blit(text, (self.rect.x + 8, self.rect.y + 6))
+
+    def hit(self, local_pos):
+        return self.rect.collidepoint(local_pos)
+
+
 def create_render_surfaces(view_width, view_height):
     world_surf = pygame.Surface((max(1, view_width), max(1, view_height)), flags=pygame.SRCALPHA)
     ui_surf = pygame.Surface((UI_WIDTH, max(1, view_height)), flags=pygame.SRCALPHA)
@@ -128,6 +155,28 @@ def apply_world_controls(world_obj, sliders):
 world = World()
 worms = []
 eggs = []
+simulation_mode = MODE_ECOSYSTEM if SIMULATION_MODE not in (MODE_ECOSYSTEM, MODE_SINGLE) else SIMULATION_MODE
+
+mode_buttons = {
+    MODE_ECOSYSTEM: UIButton(20, 52, 130, 30, "Ecosystem"),
+    MODE_SINGLE: UIButton(160, 52, 130, 30, "Single Worm"),
+}
+
+experiment_buttons = {
+    "food_gradient": UIButton(20, 470, 130, 26, "Food Gradient"),
+    "oxygen_gradient": UIButton(160, 470, 130, 26, "Oxygen Gradient"),
+    "obstacle": UIButton(20, 500, 130, 26, "Obstacle"),
+}
+
+experiment_toggles = {
+    "food_gradient": True,
+    "oxygen_gradient": False,
+    "obstacle": False,
+}
+single_obstacles = [
+    (WORLD_SIZE * 0.50, WORLD_SIZE * 0.48, 36.0),
+    (WORLD_SIZE * 0.58, WORLD_SIZE * 0.56, 30.0),
+]
 
 control_sliders = {
     "temperature": Slider(20, 80, 250, 0.5, 2.0, TEMPERATURE, "Temperature"),
@@ -137,11 +186,14 @@ control_sliders = {
     "mutation": Slider(20, 320, 250, 0.0, 0.1, MUTATION_RATE, "Mutation"),
     "season_speed": Slider(20, 380, 250, 0.00005, 0.01, SEASON_SPEED, "Season Speed"),
     "sim_speed": Slider(20, 440, 250, 0.25, 8.0, 1.0, "Sim Speed"),
+    "cpg_freq": Slider(20, 560, 250, 0.4, 3.0, 1.0, "CPG Freq"),
+    "cpg_amp": Slider(20, 620, 250, 0.2, 2.0, 1.0, "CPG Amp"),
 }
 apply_world_controls(world, control_sliders)
 
-renderer = GPURenderer(SCREEN_WIDTH, SCREEN_HEIGHT)
-renderer.ctx.viewport = (0, 0, world_view_width, screen_height)
+renderer = GPURenderer(SCREEN_WIDTH, SCREEN_HEIGHT) if USE_OPENGL_WORLD else None
+if renderer is not None:
+    renderer.ctx.viewport = (0, 0, world_view_width, screen_height)
 clock = pygame.time.Clock()
 accumulator = 0.0
 
@@ -164,6 +216,27 @@ total_deaths = 0
 max_generation = 0
 view_mode = 0
 debug_log_timer = 0.0
+
+
+def spawn_initial_population(count=INITIAL_WORMS):
+    worms.clear()
+    eggs.clear()
+    for _ in range(max(1, int(count))):
+        worms.append(spawn_worm_near_food())
+
+
+def switch_to_single_worm():
+    worms.clear()
+    eggs.clear()
+    single = spawn_worm_near_food()
+    single.energy = 120.0
+    single.age = 50.0
+    single.stage = "adult"
+    worms.append(single)
+
+
+def switch_to_ecosystem():
+    spawn_initial_population(INITIAL_WORMS)
 
 
 def split_by_gap(points, max_gap):
@@ -259,8 +332,63 @@ def world_to_screen(world_x, world_y, camera_x, camera_y, zoom, view_width, view
     return screen_x, screen_y
 
 
-for _ in range(INITIAL_WORMS):
-    worms.append(spawn_worm_near_food())
+def apply_single_worm_experiments():
+    if simulation_mode != MODE_SINGLE or not worms:
+        return
+
+    worm = worms[0]
+    worm.repro_timer = max(worm.repro_timer, 9999.0)
+    worm.cpg_frequency_scale = control_sliders["cpg_freq"].value
+    worm.cpg_amplitude_scale = control_sliders["cpg_amp"].value
+
+    if experiment_toggles["food_gradient"]:
+        target_x = WORLD_SIZE * 0.78
+        target_y = WORLD_SIZE * 0.52
+        gx = int((target_x / WORLD_SIZE) * GRID_SIZE)
+        gy = int((target_y / WORLD_SIZE) * GRID_SIZE)
+        gx = max(0, min(GRID_SIZE - 1, gx))
+        gy = max(0, min(GRID_SIZE - 1, gy))
+        world.food[gx, gy] = min(1.0, float(world.food[gx, gy]) + 0.03)
+
+    if experiment_toggles["oxygen_gradient"]:
+        grad = np.linspace(1.0, 0.2, GRID_SIZE, dtype=np.float32)
+        world.oxygen[:, :] = grad[:, None]
+
+    if experiment_toggles["obstacle"]:
+        for ox, oy, radius in single_obstacles:
+            dx = worm.x - ox
+            dy = worm.y - oy
+            dist = math.sqrt(dx * dx + dy * dy)
+            if dist < radius + 24.0:
+                worm.angular_velocity += random.uniform(-0.06, 0.06)
+
+
+def estimate_worm_curvature(worm):
+    points = worm.body_points()
+    if len(points) < 3:
+        return 0.0
+
+    total = 0.0
+    count = 0
+    for i in range(1, len(points) - 1):
+        ax = points[i][0] - points[i - 1][0]
+        ay = points[i][1] - points[i - 1][1]
+        bx = points[i + 1][0] - points[i][0]
+        by = points[i + 1][1] - points[i][1]
+        al = math.sqrt(ax * ax + ay * ay)
+        bl = math.sqrt(bx * bx + by * by)
+        if al < 1e-6 or bl < 1e-6:
+            continue
+        dot = max(-1.0, min(1.0, (ax * bx + ay * by) / (al * bl)))
+        total += abs(math.acos(dot))
+        count += 1
+    return total / max(1, count)
+
+
+if simulation_mode == MODE_SINGLE:
+    switch_to_single_worm()
+else:
+    switch_to_ecosystem()
 
 if worms:
     camera_x = sum(w.x for w in worms) / len(worms)
@@ -284,11 +412,15 @@ while running:
 
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_1:
-                view_mode = 0
+                simulation_mode = MODE_ECOSYSTEM
+                switch_to_ecosystem()
             if event.key == pygame.K_2:
-                view_mode = 1
+                simulation_mode = MODE_SINGLE
+                switch_to_single_worm()
             if event.key == pygame.K_3:
                 view_mode = 2
+            if event.key == pygame.K_i:
+                show_ui = not show_ui
             if event.key == pygame.K_4:
                 simulation_speed = 0.5
                 control_sliders["sim_speed"].value = simulation_speed
@@ -306,6 +438,10 @@ while running:
                 zoom *= 1.1
             if event.key == pygame.K_e:
                 zoom /= 1.1
+            if event.key == pygame.K_z:
+                zoom *= 1.1
+            if event.key == pygame.K_x:
+                zoom /= 1.1
             plus_keys = (pygame.K_EQUALS, getattr(pygame, "K_PLUS", pygame.K_EQUALS), pygame.K_KP_PLUS)
             if event.key in plus_keys:
                 zoom *= 1.1
@@ -317,7 +453,8 @@ while running:
 
             if event.key == pygame.K_f:
                 fullscreen, screen, screen_width, screen_height, world_view_width = toggle_fullscreen_state(fullscreen)
-                renderer.ctx.viewport = (0, 0, world_view_width, screen_height)
+                if renderer is not None:
+                    renderer.ctx.viewport = (0, 0, world_view_width, screen_height)
                 world_surface, ui_surface = create_render_surfaces(world_view_width, screen_height)
             if event.key == pygame.K_c:
                 if camera_mode == CAMERA_MODE_FREE:
@@ -331,7 +468,18 @@ while running:
             else:
                 event_pos = getattr(event, "pos", pygame.mouse.get_pos())
             local_pos = (event_pos[0] - world_view_width, event_pos[1])
-            if local_pos[0] >= 0:
+            if show_ui and local_pos[0] >= 0:
+                if event.type == pygame.MOUSEBUTTONDOWN and getattr(event, "button", 0) == 1:
+                    if mode_buttons[MODE_ECOSYSTEM].hit(local_pos):
+                        simulation_mode = MODE_ECOSYSTEM
+                        switch_to_ecosystem()
+                    elif mode_buttons[MODE_SINGLE].hit(local_pos):
+                        simulation_mode = MODE_SINGLE
+                        switch_to_single_worm()
+                    for toggle_name, button in experiment_buttons.items():
+                        if button.hit(local_pos):
+                            experiment_toggles[toggle_name] = not experiment_toggles[toggle_name]
+
                 slider_changed = False
                 for slider in control_sliders.values():
                     if slider.handle_event(event, local_pos):
@@ -364,11 +512,17 @@ while running:
 
     births = 0
     deaths = 0
+    single_curvature = 0.0
 
     while accumulator >= FIXED_DT:
+        if simulation_mode == MODE_SINGLE and len(worms) > 1:
+            worms = [worms[0]]
+            eggs.clear()
+
         active_chunks = world.get_active_chunks_near_worms(worms, radius_chunks=2)
         world.update(FIXED_DT, active_chunks=active_chunks)
         world.set_worm_positions(worms)
+        apply_single_worm_experiments()
 
         pre_count = len(worms)
         new_worms = []
@@ -409,10 +563,17 @@ while running:
         total_births += step_births
         total_deaths += step_deaths
 
-        worms.extend(new_worms)
-        worms.extend(hatched_worms)
-        if len(worms) > MAX_WORMS:
-            worms = worms[:MAX_WORMS]
+        if simulation_mode == MODE_SINGLE:
+            eggs.clear()
+            if worms:
+                worms = [worms[0]]
+            if worms:
+                single_curvature = estimate_worm_curvature(worms[0])
+        else:
+            worms.extend(new_worms)
+            worms.extend(hatched_worms)
+            if len(worms) > MAX_WORMS:
+                worms = worms[:MAX_WORMS]
 
         if worms:
             max_generation = max(max_generation, max(getattr(w, "generation", 0) for w in worms))
@@ -427,8 +588,11 @@ while running:
     deaths_per_sec = deaths_per_sec * 0.9 + instant_deaths * 0.1
 
     if len(worms) == 0:
-        for _ in range(2):
-            worms.append(spawn_worm_near_food())
+        if simulation_mode == MODE_SINGLE:
+            switch_to_single_worm()
+        else:
+            for _ in range(2):
+                worms.append(spawn_worm_near_food())
         if worms:
             camera_x = sum(w.x for w in worms) / len(worms)
             camera_y = sum(w.y for w in worms) / len(worms)
@@ -595,16 +759,19 @@ while running:
         render_pheromone_positions = pheromone_positions
         render_head_positions = empty_points
 
-    renderer.render(
-        render_worm_strips,
-        render_pheromone_positions,
-        render_food_layers,
-        render_chemical_layers,
-        render_head_positions,
-        (camera_x / WORLD_SIZE) * world_scale,
-        (camera_y / WORLD_SIZE) * world_scale,
-        zoom,
-    )
+    if renderer is not None:
+        renderer.render(
+            render_worm_strips,
+            render_pheromone_positions,
+            render_food_layers,
+            render_chemical_layers,
+            render_head_positions,
+            (camera_x / WORLD_SIZE) * world_scale,
+            (camera_y / WORLD_SIZE) * world_scale,
+            zoom,
+        )
+    else:
+        screen.fill((8, 8, 12))
 
     world_surface.fill((0, 0, 0, 0))
     if view_mode == 0:
@@ -676,6 +843,37 @@ while running:
             if 0 <= sx < world_view_width and 0 <= sy < screen_height:
                 pygame.draw.circle(world_surface, (255, 90, 90), (int(sx), int(sy)), 2)
 
+        if simulation_mode == MODE_SINGLE and worms:
+            single_points = worms[0].body_points()
+            for i in range(1, len(single_points) - 1):
+                ax = single_points[i][0] - single_points[i - 1][0]
+                ay = single_points[i][1] - single_points[i - 1][1]
+                bx = single_points[i + 1][0] - single_points[i][0]
+                by = single_points[i + 1][1] - single_points[i][1]
+                al = math.sqrt(ax * ax + ay * ay)
+                bl = math.sqrt(bx * bx + by * by)
+                if al < 1e-6 or bl < 1e-6:
+                    continue
+                dot = max(-1.0, min(1.0, (ax * bx + ay * by) / (al * bl)))
+                curve = abs(math.acos(dot))
+                cx, cy = world_to_screen(
+                    single_points[i][0],
+                    single_points[i][1],
+                    camera_x,
+                    camera_y,
+                    zoom,
+                    world_view_width,
+                    screen_height,
+                )
+                color = (min(255, int(curve * 240.0)), 80, 255 - min(255, int(curve * 240.0)))
+                pygame.draw.circle(world_surface, color, (int(cx), int(cy)), 2)
+
+            if experiment_toggles["obstacle"]:
+                for ox, oy, radius in single_obstacles:
+                    sx, sy = world_to_screen(ox, oy, camera_x, camera_y, zoom, world_view_width, screen_height)
+                    rr = max(3, int(radius * zoom * world_view_width / WORLD_SIZE))
+                    pygame.draw.circle(world_surface, (170, 70, 70), (int(sx), int(sy)), rr, 2)
+
     screen.blit(world_surface, (0, 0))
 
     avg_energy = (sum(w.energy for w in worms) / len(worms)) if worms else 0.0
@@ -691,50 +889,76 @@ while running:
     dominant_lineage = max(lineage_counts, key=lineage_counts.get) if lineage_counts else -1
     largest_colony = max(lineage_counts.values()) if lineage_counts else 0
 
-    ui_surface.fill((25, 25, 30))
-    ui_surface.blit(font.render("Control Panel", True, (235, 235, 235)), (20, 12))
-    ui_surface.blit(small_font.render("Environment Controls", True, (190, 210, 255)), (20, 44))
+    if show_ui:
+        ui_surface.fill((25, 25, 30))
+        ui_surface.blit(font.render("Simulation Mode", True, (235, 235, 235)), (20, 12))
+        mode_buttons[MODE_ECOSYSTEM].draw(ui_surface, small_font, selected=(simulation_mode == MODE_ECOSYSTEM))
+        mode_buttons[MODE_SINGLE].draw(ui_surface, small_font, selected=(simulation_mode == MODE_SINGLE))
 
-    for slider_key in ("temperature", "water", "oxygen", "food_growth", "mutation", "season_speed", "sim_speed"):
-        control_sliders[slider_key].draw(ui_surface, font, small_font)
+        ui_surface.blit(small_font.render("Environment Controls", True, (190, 210, 255)), (20, 88))
+        for slider_key in ("temperature", "water", "oxygen", "food_growth", "mutation", "season_speed", "sim_speed"):
+            control_sliders[slider_key].draw(ui_surface, font, small_font)
 
-    stats = [
-        f"Worms: {len(worms)}",
-        f"Avg Energy: {avg_energy:.1f}",
-        f"Births: {total_births}",
-        f"Deaths: {total_deaths}",
-        f"Lineages: {total_lineages}",
-        f"Food Total: {total_food:.1f}",
-        f"Season: {world.season_name}",
-        f"Temperature: {world.temperature:.1f} C",
-        f"Births/s: {births_per_sec:.2f}",
-        f"Deaths/s: {deaths_per_sec:.2f}",
-        f"Dominant lineage: {dominant_lineage}",
-    ]
+        if simulation_mode == MODE_SINGLE:
+            ui_surface.blit(small_font.render("Single Worm Controls", True, (190, 210, 255)), (20, 532))
+            control_sliders["cpg_freq"].draw(ui_surface, font, small_font)
+            control_sliders["cpg_amp"].draw(ui_surface, font, small_font)
 
-    y = 500
-    ui_surface.blit(font.render("Simulation Stats", True, (190, 210, 255)), (20, y))
-    y += 24
-    for stat in stats:
-        ui_surface.blit(small_font.render(stat, True, (230, 230, 230)), (20, y))
-        y += 20
+        ui_surface.blit(small_font.render("Sensor Experiments", True, (190, 210, 255)), (20, 448))
+        for key, button in experiment_buttons.items():
+            button.draw(ui_surface, small_font, selected=experiment_toggles[key])
 
-    camera_mode_name = "Free camera" if camera_mode == CAMERA_MODE_FREE else "Follow dominant lineage"
-    y += 8
-    for line in (
-        f"Camera: {camera_mode_name}",
-        f"View mode: {view_mode} (1/2/3)",
-        "F fullscreen, C camera mode",
-        "WASD/Arrows pan, Q/E zoom",
-    ):
-        ui_surface.blit(small_font.render(line, True, (190, 190, 200)), (20, y))
-        y += 18
+        stats = [
+            f"Mode: {simulation_mode}",
+            f"Worms: {len(worms)}",
+            f"Avg Energy: {avg_energy:.1f}",
+            f"Births: {total_births}",
+            f"Deaths: {total_deaths}",
+            f"Lineages: {total_lineages}",
+            f"Food Total: {total_food:.1f}",
+            f"Season: {world.season_name}",
+            f"Temperature: {world.temperature:.1f} C",
+            f"Births/s: {births_per_sec:.2f}",
+            f"Deaths/s: {deaths_per_sec:.2f}",
+            f"Dominant lineage: {dominant_lineage}",
+        ]
+        if simulation_mode == MODE_SINGLE and worms:
+            lead = worms[0]
+            stats.extend(
+                (
+                    f"Curvature: {single_curvature:.3f}",
+                    f"CPG freq: {lead.wave_freq:.2f}",
+                    f"CPG amp: {lead.wave_amp:.2f}",
+                    f"Oscillator phase: {lead.wave_phase:.2f}",
+                )
+            )
 
-    screen.blit(ui_surface, (world_view_width, 0))
-    pygame.draw.line(screen, (80, 80, 80), (world_view_width, 0), (world_view_width, screen_height), 2)
+        y = 660 if simulation_mode == MODE_SINGLE else 560
+        ui_surface.blit(font.render("Simulation Stats", True, (190, 210, 255)), (20, y))
+        y += 24
+        for stat in stats:
+            ui_surface.blit(small_font.render(stat, True, (230, 230, 230)), (20, y))
+            y += 18
+
+        camera_mode_name = "Free camera" if camera_mode == CAMERA_MODE_FREE else "Follow dominant lineage"
+        y += 4
+        for line in (
+            "I: Toggle UI",
+            "1: Ecosystem mode",
+            "2: Single worm mode",
+            "F: Fullscreen, C: Camera",
+            "WASD/Arrows: Pan",
+            "Z/X: Zoom",
+            f"Camera: {camera_mode_name}",
+        ):
+            ui_surface.blit(small_font.render(line, True, (190, 190, 200)), (20, y))
+            y += 17
+
+        screen.blit(ui_surface, (world_view_width, 0))
+        pygame.draw.line(screen, (80, 80, 80), (world_view_width, 0), (world_view_width, screen_height), 2)
 
     pygame.display.set_caption(
-        f"Worms:{len(worms)} Food:{total_food:.0f} Lineages:{total_lineages} "
+        f"Mode:{simulation_mode} Worms:{len(worms)} Food:{total_food:.0f} Lineages:{total_lineages} "
         f"Gen:{max_generation} Season:{world.season_name}"
     )
 
