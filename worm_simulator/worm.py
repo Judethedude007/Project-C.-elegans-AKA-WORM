@@ -1090,12 +1090,13 @@ class Worm:
                 if self.energy > reproduction_threshold and self.age > maturity_age:
                     self._reproduce_self(new_worms=new_worms, new_eggs=new_eggs)
                     self.energy *= 0.5
-            elif self.sex == "male" and self.energy > 30.0 and self.age > maturity_age:
-                mate = self._find_mate(nearby_worms)
-                if mate is not None and mate.energy > reproduction_threshold:
-                    self._reproduce_mate(mate, new_worms=new_worms, new_eggs=new_eggs)
-                    self.energy *= 0.5
-                    mate.energy *= 0.5
+            elif self.sex == "male":
+                if self.energy > 30 and self.age > maturity_age:
+                    mate = self._find_mate(nearby_worms)
+                    if mate is not None and mate.energy > reproduction_threshold:
+                        self._reproduce_mate(mate, new_worms=new_worms, new_eggs=new_eggs)
+                        self.energy *= 0.5
+                        mate.energy *= 0.5
 
         self.energy = max(0.0, self.energy)
 
