@@ -912,8 +912,9 @@ class Worm:
 
             self.angle += random.uniform(-0.03, 0.03)
 
-        # --- Energy loss from movement ---
-        self.energy -= target_speed * 0.02
+        # --- Energy loss from movement (seasonal metabolism) ---
+        metabolism = world.season_effects[world.current_season]["metabolism"]
+        self.energy -= target_speed * 0.02 * metabolism
 
         head_vx, head_vy = self.vel[0]
         head_vx *= GROUND_FRICTION
