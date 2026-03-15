@@ -91,6 +91,50 @@ class Egg:
 
 
 class Worm:
+    def update(self, world, dt=1 / 60, new_worms=None, new_eggs=None, nearby_worms=None):
+        # ...existing code...
+        gx = int(self.x / WORLD_SIZE * GRID_SIZE)
+        gy = int(self.y / WORLD_SIZE * GRID_SIZE)
+        food_here = 0.0
+        if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
+            food_here = float(world.food[gx, gy])
+
+        # Worms follow pheromone gradients
+        px = 0
+        py = 0
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                nx = gx + dx
+                ny = gy + dy
+                if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
+                    value = world.pheromone[nx, ny]
+                    px += dx * value
+                    py += dy * value
+
+        if abs(px) > 1e-6 or abs(py) > 1e-6:
+            pheromone_angle = math.atan2(py, px)
+            self.angle += (pheromone_angle - self.angle) * 0.01
+
+        # Food chemotaxis (food gradient following)
+        food_x = 0
+        food_y = 0
+        for dx in [-2, -1, 0, 1, 2]:
+            for dy in [-2, -1, 0, 1, 2]:
+                nx = gx + dx
+                ny = gy + dy
+                if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
+                    value = world.food[nx, ny]
+                    food_x += dx * value
+                    food_y += dy * value
+
+        if abs(food_x) > 1e-6 or abs(food_y) > 1e-6:
+            food_angle = math.atan2(food_y, food_x)
+            delta = math.atan2(
+                math.sin(food_angle - self.angle),
+                math.cos(food_angle - self.angle)
+            )
+            self.angle += delta * 0.03
+        # ...existing code...
 
     def __init__(self, x, y, genes=None, inherited_expression=None, inherited_genes=None):
 
@@ -948,6 +992,22 @@ class Worm:
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
             food_here = float(world.food[gx, gy])
 
+        # Worms follow pheromone gradients
+        px = 0
+        py = 0
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                nx = gx + dx
+                ny = gy + dy
+                if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
+                    value = world.pheromone[nx, ny]
+                    px += dx * value
+                    py += dy * value
+
+        if abs(px) > 1e-6 or abs(py) > 1e-6:
+            pheromone_angle = math.atan2(py, px)
+            self.angle += (pheromone_angle - self.angle) * 0.01
+
 
         # --- Food eating only on contact ---
         food_eaten = 0.0
@@ -998,7 +1058,7 @@ class Worm:
                 self.vel[i] = (0.0, 0.0)
 
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
-            world.pheromone[gx, gy] += PHEROMONE_DEPOSIT * 0.05
+            world.pheromone[gx, gy] += 0.02
 
 
         # --- Reproduction only if energy and age thresholds are met ---
