@@ -6,3 +6,4 @@ __pycache__/
 .Python
 worm_simulator/runs/*.csv
 worm_simulator/runs/*.png
+openworm/

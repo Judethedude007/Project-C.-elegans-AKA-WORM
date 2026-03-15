@@ -1,6 +1,7 @@
 import random
 import math
 import os
+import shutil
 import subprocess
 import sys
 import numpy as np
@@ -56,11 +57,21 @@ USE_OPENGL_WORLD = False
 
 UI_MARGIN_X = 20
 UI_SLIDER_WIDTH = 250
-UI_SLIDER_STEP = 60
-UI_SECTION_GAP = 28
-UI_SCROLL_SPEED = 30
+UI_SLIDER_STEP = 70
+UI_SECTION_GAP = 30
+UI_TITLE_STEP = 40
+UI_BUTTON_STEP = 50
+UI_SCROLL_SPEED = 40
 LOG_INTERVAL_SECONDS = 2.0
 RUNS_DIR_NAME = "runs"
+UI_STATS_LINE_HEIGHT = 18
+UI_HELP_LINE_HEIGHT = 17
+UI_PANEL_BOTTOM_PADDING = 40
+UI_STATS_COUNT = 17
+UI_HELP_COUNT = 10
+ENVIRONMENT_SLIDERS = ("temperature", "water", "oxygen", "food_growth", "season_speed")
+EVOLUTION_SLIDERS = ("mutation",)
+SIMULATION_SLIDERS = ("sim_speed",)
 
 pygame.init()
 display_flags = pygame.DOUBLEBUF | pygame.HWSURFACE
@@ -163,27 +174,76 @@ def apply_world_controls(world_obj, sliders):
     )
 
 
+def get_active_slider_keys():
+    keys = []
+    if not section_collapsed["environment"]:
+        keys.extend(ENVIRONMENT_SLIDERS)
+    if not section_collapsed["evolution"]:
+        keys.extend(EVOLUTION_SLIDERS)
+    if not section_collapsed["simulation"]:
+        keys.extend(SIMULATION_SLIDERS)
+    return tuple(keys)
+
+
 def update_ui_layout(scroll_offset):
-    y = 12 + scroll_offset
-    mode_buttons[MODE_ECOSYSTEM].rect.update(UI_MARGIN_X, y + 40, 130, 30)
-    mode_buttons[MODE_OPENWORM].rect.update(UI_MARGIN_X + 140, y + 40, 130, 30)
+    ui_y = 20 + scroll_offset
+    mode_title_y = ui_y
+    ui_y += UI_TITLE_STEP
 
-    y += 120
-    for slider_key in ("temperature", "water", "oxygen", "food_growth", "mutation", "season_speed", "sim_speed"):
-        slider = control_sliders[slider_key]
-        slider.rect.update(UI_MARGIN_X, y, UI_SLIDER_WIDTH, 20)
-        y += UI_SLIDER_STEP
+    mode_buttons[MODE_ECOSYSTEM].rect.update(UI_MARGIN_X, ui_y, 130, 30)
+    mode_buttons[MODE_OPENWORM].rect.update(UI_MARGIN_X + 140, ui_y, 130, 30)
+    ui_y += UI_BUTTON_STEP
 
-    y += 18
-    export_graph_button.rect.update(UI_MARGIN_X, y, UI_SLIDER_WIDTH, 30)
-    y += 48
+    section_buttons["environment"].rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 26)
+    ui_y += 34
+
+    if not section_collapsed["environment"]:
+        for slider_key in ENVIRONMENT_SLIDERS:
+            slider = control_sliders[slider_key]
+            slider.rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 20)
+            ui_y += UI_SLIDER_STEP
+        ui_y += UI_SECTION_GAP
+
+    section_buttons["evolution"].rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 26)
+    ui_y += 34
+
+    if not section_collapsed["evolution"]:
+        for slider_key in EVOLUTION_SLIDERS:
+            slider = control_sliders[slider_key]
+            slider.rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 20)
+            ui_y += UI_SLIDER_STEP
+        ui_y += UI_SECTION_GAP
+
+    section_buttons["simulation"].rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 26)
+    ui_y += 34
+
+    if not section_collapsed["simulation"]:
+        for slider_key in SIMULATION_SLIDERS:
+            slider = control_sliders[slider_key]
+            slider.rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 20)
+            ui_y += UI_SLIDER_STEP
+
+        export_graph_button.rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 30)
+        ui_y += UI_BUTTON_STEP
+        ui_y += UI_SECTION_GAP
+
+    section_buttons["stats"].rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 26)
+    ui_y += 34
+
+    stats_y = ui_y
+
+    if section_collapsed["stats"]:
+        content_bottom = ui_y + UI_PANEL_BOTTOM_PADDING
+    else:
+        stats_height = 24 + UI_STATS_COUNT * UI_STATS_LINE_HEIGHT
+        help_height = 4 + UI_HELP_COUNT * UI_HELP_LINE_HEIGHT
+        content_bottom = stats_y + stats_height + help_height + UI_PANEL_BOTTOM_PADDING
 
     return {
-        "stats_y": y,
-        "mode_title_y": 12 + scroll_offset,
-        "env_title_y": 88 + scroll_offset,
-        "sim_title_y": control_sliders["sim_speed"].rect.y - 22,
-        "content_bottom": y + 420,
+        "stats_y": stats_y,
+        "mode_title_y": mode_title_y,
+        "content_bottom": content_bottom,
+        "scroll_offset": scroll_offset,
     }
 
 
@@ -192,7 +252,6 @@ worms = []
 eggs = []
 simulation_mode = MODE_ECOSYSTEM
 ui_scroll = 0
-ui_scroll_min = 0
 openworm_status = "OpenWorm not launched"
 graph_status = "Graph export not started"
 sim_time = 0.0
@@ -203,6 +262,18 @@ mode_buttons = {
     MODE_OPENWORM: UIButton(160, 52, 130, 30, "OpenWorm"),
 }
 export_graph_button = UIButton(20, 0, 250, 30, "Export Graph")
+section_buttons = {
+    "environment": UIButton(20, 0, 250, 26, "Environment v"),
+    "evolution": UIButton(20, 0, 250, 26, "Evolution v"),
+    "simulation": UIButton(20, 0, 250, 26, "Simulation v"),
+    "stats": UIButton(20, 0, 250, 26, "Stats v"),
+}
+section_collapsed = {
+    "environment": False,
+    "evolution": False,
+    "simulation": False,
+    "stats": False,
+}
 
 control_sliders = {
     "temperature": Slider(20, 80, 250, 0.5, 2.0, TEMPERATURE, "Temperature"),
@@ -258,16 +329,38 @@ def switch_to_ecosystem():
 
 
 def launch_openworm():
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    openworm_root = os.path.join(project_root, "openworm")
-    run_script = os.path.join(openworm_root, "run.py")
+    root = os.path.dirname(os.path.dirname(__file__))
+    openworm_root = os.path.join(root, "openworm")
+    run_py = os.path.join(openworm_root, "run.py")
+    run_cmd = os.path.join(openworm_root, "run.cmd")
+    run_sh = os.path.join(openworm_root, "run.sh")
+    fallback_py = os.path.join(openworm_root, "master_openworm.py")
 
-    if not os.path.exists(run_script):
-        return False, f"OpenWorm runner not found: {run_script}"
+    if not os.path.isdir(openworm_root):
+        return False, f"OpenWorm folder not found: {openworm_root}"
 
     try:
-        subprocess.Popen([sys.executable, run_script], cwd=openworm_root)
-        return True, "OpenWorm launched in a separate process"
+        if os.path.exists(run_py):
+            subprocess.Popen([sys.executable, run_py], cwd=openworm_root)
+            return True, "OpenWorm launched via run.py"
+
+        if os.name == "nt" and os.path.exists(run_cmd):
+            if shutil.which("docker") is None:
+                return False, "OpenWorm run.cmd requires Docker in PATH"
+            subprocess.Popen(["cmd", "/c", run_cmd], cwd=openworm_root)
+            return True, "OpenWorm launched via run.cmd"
+
+        if os.path.exists(run_sh):
+            if shutil.which("docker") is None:
+                return False, "OpenWorm run.sh requires Docker in PATH"
+            subprocess.Popen(["bash", run_sh], cwd=openworm_root)
+            return True, "OpenWorm launched via run.sh"
+
+        if os.path.exists(fallback_py):
+            subprocess.Popen([sys.executable, fallback_py], cwd=openworm_root)
+            return True, "OpenWorm launched via master_openworm.py"
+
+        return False, f"OpenWorm runner not found in: {openworm_root}"
     except Exception as exc:
         return False, f"OpenWorm launch failed: {exc}"
 
@@ -388,8 +481,10 @@ if worms:
 while running:
 
     ui_layout = update_ui_layout(ui_scroll)
-    ui_scroll_min = min(0, int(screen_height - ui_layout["content_bottom"]))
-    ui_scroll = max(ui_scroll_min, min(0, ui_scroll))
+    max_scroll = max(0, int(ui_layout["content_bottom"] - screen_height + UI_PANEL_BOTTOM_PADDING))
+    ui_scroll = max(-max_scroll, min(0, ui_scroll))
+    if ui_scroll != ui_layout["scroll_offset"]:
+        ui_layout = update_ui_layout(ui_scroll)
     simulation_speed = control_sliders["sim_speed"].value
     frame_time = clock.tick(TARGET_FPS) / 1000.0
     if frame_time <= 0.0:
@@ -470,11 +565,20 @@ while running:
                     elif mode_buttons[MODE_OPENWORM].hit(local_pos):
                         simulation_mode = MODE_OPENWORM
                         launched, openworm_status = launch_openworm()
-                    elif export_graph_button.hit(local_pos):
+                    elif section_buttons["environment"].hit(local_pos):
+                        section_collapsed["environment"] = not section_collapsed["environment"]
+                    elif section_buttons["evolution"].hit(local_pos):
+                        section_collapsed["evolution"] = not section_collapsed["evolution"]
+                    elif section_buttons["simulation"].hit(local_pos):
+                        section_collapsed["simulation"] = not section_collapsed["simulation"]
+                    elif section_buttons["stats"].hit(local_pos):
+                        section_collapsed["stats"] = not section_collapsed["stats"]
+                    elif (not section_collapsed["simulation"]) and export_graph_button.hit(local_pos):
                         launched, graph_status = launch_graph_export(evolution_logger.csv_path)
 
                 slider_changed = False
-                for slider in control_sliders.values():
+                for slider_key in get_active_slider_keys():
+                    slider = control_sliders[slider_key]
                     if slider.handle_event(event, local_pos):
                         slider_changed = True
                 if slider_changed:
@@ -485,12 +589,10 @@ while running:
             mouse_x, _ = pygame.mouse.get_pos()
             if show_ui and mouse_x >= world_view_width:
                 ui_scroll += event.y * UI_SCROLL_SPEED
-                ui_scroll = max(ui_scroll_min, min(0, ui_scroll))
-            else:
-                if event.y > 0:
-                    zoom *= 1.1
-                elif event.y < 0:
-                    zoom /= 1.1
+                max_scroll = max(0, int(ui_layout["content_bottom"] - screen_height + UI_PANEL_BOTTOM_PADDING))
+                ui_scroll = max(-max_scroll, min(0, ui_scroll))
+            elif mouse_x < world_view_width:
+                zoom += event.y * 0.1
                 zoom = max(ZOOM_MIN, min(zoom, ZOOM_MAX))
 
     simulation_speed = control_sliders["sim_speed"].value
@@ -863,11 +965,26 @@ while running:
         mode_buttons[MODE_ECOSYSTEM].draw(ui_surface, small_font, selected=(simulation_mode == MODE_ECOSYSTEM))
         mode_buttons[MODE_OPENWORM].draw(ui_surface, small_font, selected=(simulation_mode == MODE_OPENWORM))
 
-        ui_surface.blit(small_font.render("Environment Controls", True, (190, 210, 255)), (20, ui_layout["env_title_y"]))
-        for slider_key in ("temperature", "water", "oxygen", "food_growth", "mutation", "season_speed", "sim_speed"):
-            control_sliders[slider_key].draw(ui_surface, font, small_font)
-        ui_surface.blit(small_font.render("Simulation Controls", True, (190, 210, 255)), (20, ui_layout["sim_title_y"]))
-        export_graph_button.draw(ui_surface, small_font)
+        section_buttons["environment"].label = f"Environment {'>' if section_collapsed['environment'] else 'v'}"
+        section_buttons["evolution"].label = f"Evolution {'>' if section_collapsed['evolution'] else 'v'}"
+        section_buttons["simulation"].label = f"Simulation {'>' if section_collapsed['simulation'] else 'v'}"
+        section_buttons["stats"].label = f"Stats {'>' if section_collapsed['stats'] else 'v'}"
+
+        for key in ("environment", "evolution", "simulation", "stats"):
+            section_buttons[key].draw(ui_surface, small_font, selected=(not section_collapsed[key]))
+
+        if not section_collapsed["environment"]:
+            for slider_key in ENVIRONMENT_SLIDERS:
+                control_sliders[slider_key].draw(ui_surface, font, small_font)
+
+        if not section_collapsed["evolution"]:
+            for slider_key in EVOLUTION_SLIDERS:
+                control_sliders[slider_key].draw(ui_surface, font, small_font)
+
+        if not section_collapsed["simulation"]:
+            for slider_key in SIMULATION_SLIDERS:
+                control_sliders[slider_key].draw(ui_surface, font, small_font)
+            export_graph_button.draw(ui_surface, small_font)
 
         stats = [
             f"Target: {simulation_mode}",
@@ -889,29 +1006,30 @@ while running:
             f"Graph: {graph_status}",
         ]
 
-        y = ui_layout["stats_y"]
-        ui_surface.blit(font.render("Simulation Stats", True, (190, 210, 255)), (20, y))
-        y += 24
-        for stat in stats:
-            ui_surface.blit(small_font.render(stat, True, (230, 230, 230)), (20, y))
-            y += 18
+        if not section_collapsed["stats"]:
+            y = ui_layout["stats_y"]
+            ui_surface.blit(font.render("Simulation Stats", True, (190, 210, 255)), (20, y))
+            y += 24
+            for stat in stats:
+                ui_surface.blit(small_font.render(stat, True, (230, 230, 230)), (20, y))
+                y += UI_STATS_LINE_HEIGHT
 
-        camera_mode_name = "Free camera" if camera_mode == CAMERA_MODE_FREE else "Follow dominant lineage"
-        y += 4
-        for line in (
-            "I: Toggle UI",
-            "1: Ecosystem simulator",
-            "2: Launch OpenWorm",
-            "Export Graph button: plot latest run",
-            "F: Fullscreen, C: Camera",
-            "WASD/Arrows: Pan",
-            "Z/X: Zoom",
-            "Mouse wheel on panel: scroll",
-            "Mouse wheel on world: zoom",
-            f"Camera: {camera_mode_name}",
-        ):
-            ui_surface.blit(small_font.render(line, True, (190, 190, 200)), (20, y))
-            y += 17
+            camera_mode_name = "Free camera" if camera_mode == CAMERA_MODE_FREE else "Follow dominant lineage"
+            y += 4
+            for line in (
+                "I: Toggle UI",
+                "1: Ecosystem simulator",
+                "2: Launch OpenWorm",
+                "Export Graph button: plot latest run",
+                "F: Fullscreen, C: Camera",
+                "WASD/Arrows: Pan",
+                "Z/X: Zoom",
+                "Mouse wheel on panel: scroll",
+                "Mouse wheel on world: zoom",
+                f"Camera: {camera_mode_name}",
+            ):
+                ui_surface.blit(small_font.render(line, True, (190, 190, 200)), (20, y))
+                y += UI_HELP_LINE_HEIGHT
 
         screen.blit(ui_surface, (world_view_width, 0))
         pygame.draw.line(screen, (80, 80, 80), (world_view_width, 0), (world_view_width, screen_height), 2)
