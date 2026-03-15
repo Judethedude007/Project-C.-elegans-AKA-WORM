@@ -17,13 +17,17 @@ STIFFNESS = 0.25
 DAMPING = 0.85
 MAX_STRETCH = SEGMENT_LENGTH * 2.0
 SENSOR_DISTANCE = 25
-GROUND_FRICTION = 0.82
+GROUND_FRICTION = 0.75
 SEGMENT_SPRING = 8.0
 MUSCLE_FORCE = 3.0
 WAVE_AMPLITUDE = 0.35
 WAVE_FREQUENCY = 1.2
 WAVE_SPACING = 0.45
-VELOCITY_DAMPING = 0.92
+VELOCITY_DAMPING = 0.88
+
+# Biological realism
+MAX_LIFESPAN = 800
+CHEMO_BIAS = 0.05
 MALE_RATIO = 0.05
 MATING_RANGE = 5.0
 MALE_COLOR = (80.0 / 255.0, 120.0 / 255.0, 255.0 / 255.0)
@@ -566,6 +570,8 @@ class Worm:
         return points
 
     def update(self, world, dt=1 / 60, new_worms=None, new_eggs=None, nearby_worms=None):
+        # --- Energy consumption per step ---
+        self.energy -= 0.05 * dt
 
         if self.dead:
             return False
@@ -751,7 +757,7 @@ class Worm:
         if abs(food_x) > 1e-6 or abs(food_y) > 1e-6:
             target_angle = math.atan2(food_y, food_x)
             angle_delta = math.atan2(math.sin(target_angle - self.angle), math.cos(target_angle - self.angle))
-            self.angle += angle_delta * 0.02
+            self.angle += angle_delta * CHEMO_BIAS
 
         if self.x < margin:
             self.angular_velocity += 0.05
@@ -805,6 +811,7 @@ class Worm:
 
         wave_strength /= SEGMENTS
 
+
         BASE_SPEED = 40.0
         serotonin = min(1.0, food_here * 4)
 
@@ -824,6 +831,9 @@ class Worm:
                 target_speed = 0.0
 
             self.angle += random.uniform(-0.03, 0.03)
+
+        # --- Energy loss from movement ---
+        self.energy -= target_speed * 0.02
 
         head_vx, head_vy = self.vel[0]
         head_vx *= GROUND_FRICTION
@@ -937,36 +947,20 @@ class Worm:
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
             food_here = float(world.food[gx, gy])
 
-        efficiency = max(0.6, self.genome["energy_efficiency"])
-        energy_loss = (ENERGY_DECAY * self.gene_metabolism / efficiency) * dt
-        energy_loss *= temperature_scale
-        movement_cost = MOVE_COST * (head_speed / max(MAX_SPEED, 1e-6)) * dt
-        energy_loss += movement_cost
-        if food_here < 0.05:
-            energy_loss *= 1.5
-        density = 0.0
-        if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
-            density = float(world.worm_density[gx, gy])
-        energy_loss *= (1.0 + density * 15.0)
-        if self.dauer:
-            energy_loss *= 0.1
 
-        self.energy -= energy_loss
-        if oxygen_here < 0.2:
-            self.energy -= 0.3 * dt * 60.0
-
+        # --- Food eating only on contact ---
         food_eaten = 0.0
-
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
-            if world.food[gx, gy] > 0 and not self.dauer:
-
+            # Distance check for food contact
+            dist_to_food = math.hypot(self.x - (gx * WORLD_SIZE / GRID_SIZE), self.y - (gy * WORLD_SIZE / GRID_SIZE))
+            if world.food[gx, gy] > 0 and not self.dauer and dist_to_food < 6:
                 eaten = min(0.05 * time_scale, world.food[gx, gy])
-
                 world.food[gx, gy] -= eaten
                 world.food_age[gx, gy] = 0.0
                 self.energy += eaten * 7
                 food_eaten += eaten
                 eating = True
+
 
         self.size += 0.002 * food_eaten
         self.size += dt * 0.01
@@ -1005,28 +999,35 @@ class Worm:
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
             world.pheromone[gx, gy] += PHEROMONE_DEPOSIT * 0.05
 
+
+        # --- Reproduction only if energy and age thresholds are met ---
+        reproduction_threshold = 800
+        maturity_age = 30
         if (not self.dauer) and self.stage == "adult" and self.repro_timer <= 0:
             if self.sex == "hermaphrodite":
-                if self.energy > self.gene_reproduction_energy:
+                if self.energy > reproduction_threshold and self.age > maturity_age:
                     self._reproduce_self(new_worms=new_worms, new_eggs=new_eggs)
-            elif self.sex == "male" and self.energy > 30.0:
+                    self.energy *= 0.5
+            elif self.sex == "male" and self.energy > 30.0 and self.age > maturity_age:
                 mate = self._find_mate(nearby_worms)
-                if mate is not None:
+                if mate is not None and mate.energy > reproduction_threshold:
                     self._reproduce_mate(mate, new_worms=new_worms, new_eggs=new_eggs)
+                    self.energy *= 0.5
+                    mate.energy *= 0.5
 
         self.energy = max(0.0, self.energy)
 
+        # --- Starvation death ---
         if self.energy <= 0:
             self.dead = True
+            self.alive = False
             return False
 
-        if self.age > 350.0:
-            death_prob = max(0.0, min(1.0, (self.age - 350.0) / 150.0))
-            if self.dauer:
-                death_prob *= 0.1
-            if random.random() < death_prob * dt:
-                self.dead = True
-                return False
+        # --- Aging death ---
+        if self.age > MAX_LIFESPAN:
+            self.dead = True
+            self.alive = False
+            return False
 
         return True
 

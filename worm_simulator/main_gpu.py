@@ -899,8 +899,8 @@ while running:
                 if food_value > 0.005:
                     intensity = min(255, int(food_value * 255.0))
                     if intensity > 105:
-                        pygame.draw.circle(world_surface, (0, 255, 120), (int(sx), int(sy)), 4)
-                        pygame.draw.circle(world_surface, (0, 120, 60), (int(sx), int(sy)), 7, 1)
+                        pygame.draw.circle(world_surface, (50, 210, 70), (int(sx), int(sy)), 2)
+                        pygame.draw.circle(world_surface, (0, 120, 60), (int(sx), int(sy)), 4, 1)
                     else:
                         ix = int(sx)
                         iy = int(sy)
@@ -945,19 +945,19 @@ while running:
 
             shadow_points = [(x + 3, y + 3) for (x, y) in screen_points]
             for i in range(1, len(shadow_points)):
-                width = int(6 * (1.0 - (i - 1) / float(max(1, len(shadow_points) - 1))))
-                width = max(width, 1)
+                width = int(8 * (1.0 - (i - 1) / float(max(1, len(shadow_points) - 1))))
+                width = max(width, 2)
                 pygame.draw.line(world_surface, (20, 20, 20), shadow_points[i - 1], shadow_points[i], width)
 
             for i in range(1, len(screen_points)):
-                width = int(6 * (1.0 - (i - 1) / float(max(1, len(screen_points) - 1))))
-                width = max(width, 1)
+                width = int(8 * (1.0 - (i - 1) / float(max(1, len(screen_points) - 1))))
+                width = max(width, 2)
                 pygame.draw.line(world_surface, base_color, screen_points[i - 1], screen_points[i], width)
 
             head = screen_points[0]
             tail = screen_points[-1]
-            pygame.draw.circle(world_surface, head_color, head, 4)
-            pygame.draw.circle(world_surface, tail_color, tail, 2)
+            pygame.draw.circle(world_surface, head_color, head, 6)
+            pygame.draw.circle(world_surface, tail_color, tail, 3)
 
         for egg in eggs:
             sx, sy = world_to_screen(egg.x, egg.y, camera_x, camera_y, zoom, world_view_width, screen_height)
@@ -1071,6 +1071,7 @@ while running:
         ]
 
         if not section_collapsed["stats"]:
+
             y = ui_layout["stats_y"]
             ui_surface.blit(font.render("Simulation Stats", True, (190, 210, 255)), (20, y))
             y += 24
@@ -1081,6 +1082,22 @@ while running:
                     ui_surface.blit(small_font.render(line, True, (230, 230, 230)), (20, y))
                     y += UI_STATS_LINE_HEIGHT
                 y += 4
+
+            # Output folder display
+            import os
+            output_path = os.path.abspath("output")
+            output_label = f"Output Folder:\n{output_path}"
+            for line in output_label.split("\n"):
+                ui_surface.blit(small_font.render(line, True, (200, 255, 200)), (20, y))
+                y += UI_STATS_LINE_HEIGHT
+
+            # 'Open Output Folder' button (simple rectangle, click detection in event loop required for full functionality)
+            button_rect = pygame.Rect(20, y, 200, 28)
+            pygame.draw.rect(ui_surface, (60, 120, 60), button_rect, border_radius=6)
+            pygame.draw.rect(ui_surface, (180, 255, 180), button_rect, width=2, border_radius=6)
+            btn_text = small_font.render("Open Output Folder", True, (255, 255, 255))
+            ui_surface.blit(btn_text, (button_rect.x + 10, button_rect.y + 4))
+            y += 36
 
             camera_mode_name = "Free camera" if camera_mode == CAMERA_MODE_FREE else "Follow dominant lineage"
             y += 4
