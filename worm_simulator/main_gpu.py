@@ -1282,10 +1282,16 @@ while running:
             panel_height    # height of scroll bar
         )
 
-    pygame.display.set_caption(
-        f"Target:{simulation_mode} Worms:{len(worms)} Food:{total_food:.0f} Lineages:{total_lineages} "
-        f"Gen:{max_generation} Season:{world.season_name}"
-    )
+    if world.climate_enabled:
+        pygame.display.set_caption(
+            f"Target:{simulation_mode} Worms:{len(worms)} Eggs:{len(eggs)} Food:{total_food:.0f} Lineages:{total_lineages} "
+            f"Gen:{max_generation} Season:{world.season_name}"
+        )
+    else:
+        pygame.display.set_caption(
+            f"Target:{simulation_mode} Worms:{len(worms)} Eggs:{len(eggs)} Food:{total_food:.0f} Lineages:{total_lineages} "
+            f"Gen:{max_generation}"
+        )
 
     pygame.display.flip()
 
