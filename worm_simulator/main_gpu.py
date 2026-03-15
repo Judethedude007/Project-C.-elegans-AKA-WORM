@@ -51,6 +51,11 @@ MODE_SINGLE = "single"
 # Keep world rendering robust on Windows by defaulting to software 2D composition.
 USE_OPENGL_WORLD = False
 
+UI_MARGIN_X = 20
+UI_SLIDER_WIDTH = 250
+UI_SLIDER_STEP = 60
+UI_SECTION_GAP = 28
+
 pygame.init()
 display_flags = pygame.DOUBLEBUF | pygame.HWSURFACE
 if USE_OPENGL_WORLD:
@@ -150,6 +155,39 @@ def apply_world_controls(world_obj, sliders):
         mutation_rate=sliders["mutation"].value,
         season_speed=sliders["season_speed"].value,
     )
+
+
+def update_ui_layout(current_mode):
+    mode_buttons[MODE_ECOSYSTEM].rect.update(UI_MARGIN_X, 52, 130, 30)
+    mode_buttons[MODE_SINGLE].rect.update(UI_MARGIN_X + 140, 52, 130, 30)
+
+    y = 120
+    for slider_key in ("temperature", "water", "oxygen", "food_growth", "mutation", "season_speed", "sim_speed"):
+        slider = control_sliders[slider_key]
+        slider.rect.update(UI_MARGIN_X, y, UI_SLIDER_WIDTH, 20)
+        y += UI_SLIDER_STEP
+
+    y += UI_SECTION_GAP
+    experiment_buttons["food_gradient"].rect.update(UI_MARGIN_X, y, 130, 26)
+    experiment_buttons["oxygen_gradient"].rect.update(UI_MARGIN_X + 140, y, 130, 26)
+    y += 34
+    experiment_buttons["obstacle"].rect.update(UI_MARGIN_X, y, 130, 26)
+    y += UI_SECTION_GAP
+
+    cpg_start_y = y
+    if current_mode == MODE_SINGLE:
+        control_sliders["cpg_freq"].rect.update(UI_MARGIN_X, y, UI_SLIDER_WIDTH, 20)
+        y += UI_SLIDER_STEP
+        control_sliders["cpg_amp"].rect.update(UI_MARGIN_X, y, UI_SLIDER_WIDTH, 20)
+        y += UI_SLIDER_STEP
+
+    y += UI_SECTION_GAP
+    return {
+        "stats_y": y,
+        "cpg_start_y": cpg_start_y,
+        "env_title_y": 88,
+        "experiments_title_y": experiment_buttons["food_gradient"].rect.y - 22,
+    }
 
 
 world = World()
@@ -396,6 +434,7 @@ if worms:
 
 while running:
 
+    ui_layout = update_ui_layout(simulation_mode)
     simulation_speed = control_sliders["sim_speed"].value
     frame_time = clock.tick(TARGET_FPS) / 1000.0
     if frame_time <= 0.0:
@@ -810,33 +849,28 @@ while running:
                     pygame.draw.rect(world_surface, (0, 0, blue), pher_rect)
 
         for worm in worms:
-            points = worm.body_points()
-            if len(points) < 2:
+            segment_points = list(worm.body)
+            if len(segment_points) < 2:
                 continue
 
             worm_rgb = tuple(int(max(0.0, min(1.0, c)) * 255) for c in getattr(worm, "color", (0.8, 0.8, 0.8)))
-            screen_points = []
-            for px, py in points:
+            if getattr(worm, "dauer", False):
+                base_color = (120, 170, 255)
+                head_color = (210, 230, 255)
+            else:
+                base_color = worm_rgb
+                head_color = (255, 200, 200)
+
+            visible_segments = max(2, min(len(segment_points), int(round(len(segment_points) * max(0.25, worm.size)))))
+
+            for i, (px, py) in enumerate(segment_points[:visible_segments]):
                 sx, sy = world_to_screen(px, py, camera_x, camera_y, zoom, world_view_width, screen_height)
-                screen_points.append((int(sx), int(sy)))
-
-            point_count = len(screen_points)
-            if point_count >= 2:
-                for idx, (sx, sy) in enumerate(screen_points):
-                    u = idx / float(max(1, point_count - 1))
-                    radius = max(1, int((6.5 * (1.0 - u) + 1.2) * max(0.7, min(1.8, zoom))))
-                    shade = 0.72 + 0.28 * (1.0 - u)
-                    seg_color = (
-                        min(255, int(worm_rgb[0] * shade)),
-                        min(255, int(worm_rgb[1] * shade)),
-                        min(255, int(worm_rgb[2] * shade)),
-                    )
-                    pygame.draw.circle(world_surface, (12, 12, 12), (sx, sy + 1), radius)
-                    pygame.draw.circle(world_surface, seg_color, (sx, sy), radius)
-
-                head_x, head_y = screen_points[0]
-                if 0 <= head_x < world_view_width and 0 <= head_y < screen_height:
-                    pygame.draw.circle(world_surface, (255, 255, 255), (head_x, head_y), 2)
+                if sx < -8 or sy < -8 or sx >= world_view_width + 8 or sy >= screen_height + 8:
+                    continue
+                u = i / float(max(1, visible_segments - 1))
+                radius = max(1, int((6.0 * (1.0 - u) + 1.0) * max(0.7, min(1.6, zoom))))
+                color = head_color if i == 0 else base_color
+                pygame.draw.circle(world_surface, color, (int(sx), int(sy)), radius)
 
         for egg in eggs:
             sx, sy = world_to_screen(egg.x, egg.y, camera_x, camera_y, zoom, world_view_width, screen_height)
@@ -892,19 +926,26 @@ while running:
     if show_ui:
         ui_surface.fill((25, 25, 30))
         ui_surface.blit(font.render("Simulation Mode", True, (235, 235, 235)), (20, 12))
+        ui_surface.blit(small_font.render("Single worm mode is OpenWorm-inspired (lightweight)", True, (165, 175, 200)), (20, 34))
         mode_buttons[MODE_ECOSYSTEM].draw(ui_surface, small_font, selected=(simulation_mode == MODE_ECOSYSTEM))
         mode_buttons[MODE_SINGLE].draw(ui_surface, small_font, selected=(simulation_mode == MODE_SINGLE))
 
-        ui_surface.blit(small_font.render("Environment Controls", True, (190, 210, 255)), (20, 88))
+        ui_surface.blit(small_font.render("Environment Controls", True, (190, 210, 255)), (20, ui_layout["env_title_y"]))
         for slider_key in ("temperature", "water", "oxygen", "food_growth", "mutation", "season_speed", "sim_speed"):
             control_sliders[slider_key].draw(ui_surface, font, small_font)
 
         if simulation_mode == MODE_SINGLE:
-            ui_surface.blit(small_font.render("Single Worm Controls", True, (190, 210, 255)), (20, 532))
+            ui_surface.blit(
+                small_font.render("Single Worm Controls", True, (190, 210, 255)),
+                (20, ui_layout["cpg_start_y"] - 22),
+            )
             control_sliders["cpg_freq"].draw(ui_surface, font, small_font)
             control_sliders["cpg_amp"].draw(ui_surface, font, small_font)
 
-        ui_surface.blit(small_font.render("Sensor Experiments", True, (190, 210, 255)), (20, 448))
+        ui_surface.blit(
+            small_font.render("Sensor Experiments", True, (190, 210, 255)),
+            (20, ui_layout["experiments_title_y"]),
+        )
         for key, button in experiment_buttons.items():
             button.draw(ui_surface, small_font, selected=experiment_toggles[key])
 
@@ -933,7 +974,7 @@ while running:
                 )
             )
 
-        y = 660 if simulation_mode == MODE_SINGLE else 560
+        y = ui_layout["stats_y"]
         ui_surface.blit(font.render("Simulation Stats", True, (190, 210, 255)), (20, y))
         y += 24
         for stat in stats:
