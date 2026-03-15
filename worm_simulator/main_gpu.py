@@ -42,7 +42,7 @@ TARGET_FPS = 60
 FIXED_DT = 1.0 / 60.0
 RENDER_GRID_STEP = 4
 DEBUG_VISIBILITY_LOG_INTERVAL = 1.0
-CAMERA_SMOOTHING = 0.05
+CAMERA_SMOOTHING = 0.1
 TRAIL_STEPS = 28
 UI_WIDTH = 320
 WINDOW_WIDTH = SCREEN_WIDTH
@@ -67,8 +67,10 @@ RUNS_DIR_NAME = "runs"
 UI_STATS_LINE_HEIGHT = 18
 UI_HELP_LINE_HEIGHT = 17
 UI_PANEL_BOTTOM_PADDING = 40
-UI_STATS_COUNT = 25
+UI_STATS_COUNT = 32
 UI_HELP_COUNT = 10
+BACKGROUND_STAR_COUNT = 200
+GRID_OVERLAY_STEP = 80
 ENVIRONMENT_SLIDERS = ("temperature", "water", "oxygen", "food_growth", "season_speed")
 EVOLUTION_SLIDERS = ("mutation",)
 SIMULATION_SLIDERS = ("sim_speed",)
@@ -87,6 +89,16 @@ world_view_width = max(1, screen_width - UI_WIDTH)
 world_surface = pygame.Surface((world_view_width, screen_height), flags=pygame.SRCALPHA)
 ui_surface = pygame.Surface((UI_WIDTH, screen_height), flags=pygame.SRCALPHA)
 show_ui = True
+
+
+def generate_background_stars(width, height, count):
+    stars = []
+    for _ in range(count):
+        stars.append((random.randint(0, max(0, width - 1)), random.randint(0, max(0, height - 1)), random.randint(30, 90)))
+    return stars
+
+
+background_stars = generate_background_stars(world_view_width, screen_height, BACKGROUND_STAR_COUNT)
 
 if IMGUI_AVAILABLE:
     imgui.create_context()
@@ -546,6 +558,7 @@ while running:
                 if renderer is not None:
                     renderer.ctx.viewport = (0, 0, world_view_width, screen_height)
                 world_surface, ui_surface = create_render_surfaces(world_view_width, screen_height)
+                background_stars = generate_background_stars(world_view_width, screen_height, BACKGROUND_STAR_COUNT)
             if event.key == pygame.K_c:
                 if camera_mode == CAMERA_MODE_FREE:
                     camera_mode = CAMERA_MODE_DOMINANT
@@ -860,7 +873,15 @@ while running:
     else:
         screen.fill((8, 8, 12))
 
-    world_surface.fill((0, 0, 0, 0))
+    world_surface.fill((6, 8, 14, 255))
+    for sx, sy, v in background_stars:
+        world_surface.set_at((sx, sy), (v, v, min(120, v + 20), 255))
+
+    for gx in range(0, world_view_width, GRID_OVERLAY_STEP):
+        pygame.draw.line(world_surface, (18, 22, 35, 55), (gx, 0), (gx, screen_height), 1)
+    for gy in range(0, screen_height, GRID_OVERLAY_STEP):
+        pygame.draw.line(world_surface, (18, 22, 35, 55), (0, gy), (world_view_width, gy), 1)
+
     if view_mode == 0:
         cell_px_w = max(1, int((world_view_width * zoom) / (2.0 * GRID_SIZE)))
         cell_px_h = max(1, int((screen_height * zoom) / (2.0 * GRID_SIZE)))
@@ -877,14 +898,14 @@ while running:
                 food_value = float(world.food[fx, fy])
                 if food_value > 0.005:
                     intensity = min(255, int(food_value * 255.0))
-                    bacteria_color = (0, max(20, intensity), 0)
-                    ix = int(sx)
-                    iy = int(sy)
-                    if 0 <= ix < world_view_width and 0 <= iy < screen_height:
-                        world_surface.set_at((ix, iy), bacteria_color)
-                    if intensity > 120:
-                        pygame.draw.circle(world_surface, (0, intensity // 3, 0), (int(sx), int(sy)), 2)
-                        pygame.draw.circle(world_surface, (80, 255, 120, 45), (int(sx), int(sy)), 4)
+                    if intensity > 105:
+                        pygame.draw.circle(world_surface, (0, 255, 120), (int(sx), int(sy)), 4)
+                        pygame.draw.circle(world_surface, (0, 120, 60), (int(sx), int(sy)), 7, 1)
+                    else:
+                        ix = int(sx)
+                        iy = int(sy)
+                        if 0 <= ix < world_view_width and 0 <= iy < screen_height:
+                            world_surface.set_at((ix, iy), (0, max(20, intensity), 0))
 
                 pheromone_value = float(world.pheromone[fx, fy])
                 if pheromone_value > 0.2:
@@ -898,27 +919,23 @@ while running:
                     pygame.draw.rect(world_surface, (0, 0, blue), pher_rect)
 
         for worm in worms:
-            segment_points = list(worm.body)
+            segment_points = list(worm.visual_body_points())
             if len(segment_points) < 2:
                 continue
 
-            worm_rgb = tuple(int(max(0.0, min(1.0, c)) * 255) for c in getattr(worm, "color", (0.8, 0.8, 0.8)))
-            if getattr(worm, "dauer", False):
-                base_color = (120, 170, 255)
-                head_color = (210, 230, 255)
-                tail_color = (80, 120, 200)
-            else:
-                base_color = worm_rgb
-                head_color = (255, 200, 200)
-                tail_color = tuple(max(0, int(c * 0.55)) for c in worm_rgb)
+            worm_rgb = tuple(int(max(0.0, min(1.0, c)) * 255) for c in getattr(worm, "color_current", (0.8, 0.8, 0.8)))
+            base_color = worm_rgb
+            head_color = (255, 80, 80)
+            tail_color = (150, 150, 150)
 
-            # Motion blur trail improves perceived continuity of locomotion.
             trail_points = []
-            for tx, ty in getattr(worm, "trail", [])[-TRAIL_STEPS:]:
+            for tx, ty in getattr(worm, "trail", [])[-20:]:
                 tsx, tsy = world_to_screen(tx, ty, camera_x, camera_y, zoom, world_view_width, screen_height)
                 trail_points.append((int(tsx), int(tsy)))
-            if len(trail_points) >= 2:
-                pygame.draw.lines(world_surface, (120, 120, 130, 45), False, trail_points, 2)
+            for i, p in enumerate(trail_points):
+                alpha = (i + 1) / float(max(1, len(trail_points)))
+                radius = max(1, int(1 + alpha * 2))
+                pygame.draw.circle(world_surface, (50, 50, 80, int(35 + 80 * alpha)), p, radius)
 
             visible_segments = max(2, min(len(segment_points), int(round(len(segment_points) * max(0.25, worm.size)))))
             screen_points = []
@@ -926,26 +943,21 @@ while running:
                 sx, sy = world_to_screen(px, py, camera_x, camera_y, zoom, world_view_width, screen_height)
                 screen_points.append((int(sx), int(sy)))
 
-            for i in range(1, len(screen_points)):
-                pygame.draw.line(world_surface, (0, 0, 0, 60), (screen_points[i - 1][0] + 2, screen_points[i - 1][1] + 2), (screen_points[i][0] + 2, screen_points[i][1] + 2), 4)
-                pygame.draw.line(world_surface, base_color, screen_points[i - 1], screen_points[i], 4)
+            shadow_points = [(x + 3, y + 3) for (x, y) in screen_points]
+            for i in range(1, len(shadow_points)):
+                width = int(6 * (1.0 - (i - 1) / float(max(1, len(shadow_points) - 1))))
+                width = max(width, 1)
+                pygame.draw.line(world_surface, (20, 20, 20), shadow_points[i - 1], shadow_points[i], width)
 
-            for i, (px, py) in enumerate(segment_points[:visible_segments]):
-                sx, sy = world_to_screen(px, py, camera_x, camera_y, zoom, world_view_width, screen_height)
-                if sx < -8 or sy < -8 or sx >= world_view_width + 8 or sy >= screen_height + 8:
-                    continue
-                u = i / float(max(1, visible_segments - 1))
-                radius = max(1, int((6.0 * (1.0 - u) + 1.0) * max(0.7, min(1.6, zoom))))
-                if i == 0:
-                    color = head_color
-                elif i == visible_segments - 1:
-                    color = tail_color
-                    radius = max(1, radius - 1)
-                else:
-                    color = base_color
-                pygame.draw.circle(world_surface, (0, 0, 0, 85), (int(sx) + 2, int(sy) + 2), radius + 1)
-                pygame.draw.circle(world_surface, (0, 0, 0), (int(sx), int(sy)), radius + 2)
-                pygame.draw.circle(world_surface, color, (int(sx), int(sy)), radius)
+            for i in range(1, len(screen_points)):
+                width = int(6 * (1.0 - (i - 1) / float(max(1, len(screen_points) - 1))))
+                width = max(width, 1)
+                pygame.draw.line(world_surface, base_color, screen_points[i - 1], screen_points[i], width)
+
+            head = screen_points[0]
+            tail = screen_points[-1]
+            pygame.draw.circle(world_surface, head_color, head, 4)
+            pygame.draw.circle(world_surface, tail_color, tail, 2)
 
         for egg in eggs:
             sx, sy = world_to_screen(egg.x, egg.y, camera_x, camera_y, zoom, world_view_width, screen_height)

@@ -30,6 +30,10 @@ MALE_COLOR = (80.0 / 255.0, 120.0 / 255.0, 255.0 / 255.0)
 MAX_ENERGY_FOR_STRESS = 200.0
 
 
+def lerp(a, b, t):
+    return a + (b - a) * t
+
+
 def sample_chem(env, x, y):
     gx = int(x / WORLD_SIZE * GRID_SIZE)
     gy = int(y / WORLD_SIZE * GRID_SIZE)
@@ -95,6 +99,11 @@ class Worm:
         self.wave_phase = random.random() * 6.28
         self.wave_freq = 1.8
         self.wave_amp = 0.35
+        self.segment_count = 18
+        self.segment_length = 6
+        self.wave_speed = random.uniform(2.0, 4.0)
+        self.wave_amplitude = random.uniform(4.0, 6.0)
+        self.phase = random.random() * 6.28
         self.forward_signal = 0.0
         self.turn_signal = 0.0
         self.direction_x = math.cos(self.angle)
@@ -128,6 +137,7 @@ class Worm:
 
         if inherited_genes is None:
             inherited_genes = {}
+        self.inherited_genes = dict(inherited_genes)
 
         self.generation = int(inherited_genes.get("generation", 0))
         self.lineage_id = int(inherited_genes.get("lineage_id", random.randint(0, 1000000)))
@@ -280,8 +290,10 @@ class Worm:
 
     def _build_mutated_child_genes(self):
         child_lineage_id = self.lineage_id
+        lineage_mutated = False
         if random.random() < 0.02:
             child_lineage_id = random.randint(0, 1000000)
+            lineage_mutated = True
 
         mutation_rate = self._adaptive_mutation_rate()
         child_gene_speed = self._mutate_gene(self.gene_speed, 0.6, 1.4, mutation_rate)
@@ -309,6 +321,10 @@ class Worm:
             "generation": self.generation + 1,
             "sex": "male" if random.random() < MALE_RATIO else "hermaphrodite",
         }
+        if lineage_mutated:
+            mutated_color = self._mutate_color(self.color_current)
+            child_genes["color_target"] = tuple(mutated_color)
+            child_genes["color_current"] = tuple(self.color_current)
         return child_genes
 
     def _adaptive_mutation_rate(self, partner=None):
@@ -333,10 +349,12 @@ class Worm:
 
     def _build_mated_child_genes(self, mate):
         child_lineage_id = self.lineage_id
+        lineage_mutated = False
         if self.lineage_id != mate.lineage_id:
             child_lineage_id = random.choice([self.lineage_id, mate.lineage_id])
         if random.random() < 0.05:
             child_lineage_id = random.randint(0, 1000000)
+            lineage_mutated = True
 
         mutation_rate = self._adaptive_mutation_rate(partner=mate)
         child_gene_speed = self._mutate_gene((self.gene_speed + mate.gene_speed) * 0.5, 0.6, 1.4, mutation_rate)
@@ -394,13 +412,40 @@ class Worm:
             "generation": max(self.generation, mate.generation) + 1,
             "sex": "male" if random.random() < MALE_RATIO else "hermaphrodite",
         }
+        if lineage_mutated:
+            blend = tuple((a + b) * 0.5 for a, b in zip(self.color_current, mate.color_current))
+            mutated_color = self._mutate_color(blend)
+            child_genes["color_target"] = tuple(mutated_color)
+            child_genes["color_current"] = tuple(blend)
         return child_genes
 
     def _refresh_visual_color(self):
         if self.sex == "male":
-            self.color = MALE_COLOR
+            self.color_target = MALE_COLOR
+            self.color_current = MALE_COLOR
         else:
-            self.color = self._lineage_color(self.lineage_id)
+            inherited_color_target = None
+            inherited_color_current = None
+            if hasattr(self, "inherited_genes") and isinstance(self.inherited_genes, dict):
+                inherited_color_target = self.inherited_genes.get("color_target")
+                inherited_color_current = self.inherited_genes.get("color_current")
+
+            self.color_target = tuple(inherited_color_target) if inherited_color_target else self._lineage_color(self.lineage_id)
+            self.color_current = tuple(inherited_color_current) if inherited_color_current else self.color_target
+
+        self.color = self.color_current
+
+    @staticmethod
+    def _mutate_color(color):
+        return tuple(max(0.0, min(1.0, c + random.uniform(-0.08, 0.08))) for c in color)
+
+    def _update_visual_color(self):
+        t = 0.02
+        r = lerp(self.color_current[0], self.color_target[0], t)
+        g = lerp(self.color_current[1], self.color_target[1], t)
+        b = lerp(self.color_current[2], self.color_target[2], t)
+        self.color_current = (r, g, b)
+        self.color = self.color_current
 
     def _spawn_egg(self, child_genes, inherited_expression, new_worms=None, new_eggs=None, parent_x=None, parent_y=None):
         spawn_x = self.x if parent_x is None else parent_x
@@ -507,14 +552,29 @@ class Worm:
             rng.randint(120, 255) / 255.0,
         )
 
+    def visual_body_points(self):
+        direction_angle = self.angle if self.direction >= 0 else (self.angle + math.pi)
+        points = []
+        for i in range(self.segment_count):
+            phase = self.phase + i * 0.5
+            offset = math.sin(phase) * self.wave_amplitude
+            x = self.x - i * self.segment_length * math.cos(direction_angle)
+            y = self.y - i * self.segment_length * math.sin(direction_angle)
+            x += offset * math.sin(direction_angle)
+            y -= offset * math.cos(direction_angle)
+            points.append((x, y))
+        return points
+
     def update(self, world, dt=1 / 60, new_worms=None, new_eggs=None, nearby_worms=None):
 
         if self.dead:
             return False
 
         self.time += dt
+        self.phase += dt * self.wave_speed
         self.age += dt
         self.repro_timer -= dt
+        self._update_visual_color()
         self.environment_mutation_rate = max(0.0, min(0.1, float(getattr(world, "mutation_rate", MUTATION_RATE))))
         self._update_stage()
         segment_length = BASE_SEGMENT_LENGTH * self.size
@@ -1043,8 +1103,4 @@ class Worm:
         return smooth_points
 
     def body_points(self):
-        growth = min(1.0, self.age / 20.0)
-        body_length = BASE_LENGTH * (0.5 + 0.5 * growth)
-        visible_ratio = max(0.1, min(1.0, body_length / BASE_LENGTH))
-        visible_segments = max(2, min(self.segments, int(round(self.segments * visible_ratio))))
-        return self.smooth_body(points=self.body[:visible_segments])
+        return self.smooth_body(points=self.visual_body_points())
