@@ -738,10 +738,24 @@ class Worm:
         # Phase 19 reduced connectome: ASE/AWC sensory inputs to AIY/AIZ interneurons, then AVB/AVA motor drives.
         self.neurons["ASE"] = max(0.0, min(1.0, food_signal))
         self.neurons["AWC"] = max(0.0, min(1.0, pheromone_input_here / 1000.0))
-        self.neurons["AIY"] = math.tanh(0.8 * self.neurons["ASE"])
-        self.neurons["AIZ"] = math.tanh(0.6 * self.neurons["AWC"])
-        self.neurons["AVB"] = max(0.0, self.neurons["AIY"])
-        self.neurons["AVA"] = max(0.0, self.neurons["AIZ"] - self.neurons["AIY"])
+
+        # sensory → interneurons
+        self.neurons["AIY"] = math.tanh(
+            0.8 * self.neurons["ASE"]
+            - 0.2 * self.neurons["AWC"]
+        )
+
+        self.neurons["AIZ"] = math.tanh(
+            0.6 * self.neurons["AWC"]
+            + 0.1 * self.neurons["ASE"]
+        )
+
+        # interneuron interaction
+        ai_balance = self.neurons["AIY"] - self.neurons["AIZ"]
+
+        # motor neurons
+        self.neurons["AVB"] = max(0.0, ai_balance)
+        self.neurons["AVA"] = max(0.0, -ai_balance)
 
         forward_drive = min(1.0, 0.2 + self.neurons["AVB"])
         reverse_drive = max(0.0, self.neurons["AVA"])
