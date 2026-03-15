@@ -163,7 +163,7 @@ class Slider:
         surface.blit(text, (self.rect.x, self.rect.y - 20))
 
 class UIButton:
-
+# --- UIButton class body ---
     def __init__(self, x, y, width, height, label):
         self.rect = pygame.Rect(x, y, width, height)
         self.label = label
@@ -179,6 +179,11 @@ class UIButton:
     def hit(self, local_pos):
         return self.rect.collidepoint(local_pos)
 
+# --- Climate Toggle Button (must be after UIButton class is fully defined) ---
+def toggle_climate():
+    world.climate_enabled = not world.climate_enabled
+
+climate_button = UIButton(20, 0, 250, 30, "Enable Climate")
 # --- Scroll Bar Drawing Function ---
 def draw_scroll_bar(surface, scroll_offset, max_scroll, panel_height, x, y, width, height):
     if max_scroll <= 0:
@@ -259,6 +264,11 @@ def update_ui_layout(scroll_offset):
             ui_y += UI_SLIDER_STEP
 
         export_graph_button.rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 30)
+        ui_y += UI_BUTTON_STEP
+        ui_y += UI_SECTION_GAP
+
+        # Place the climate button below the export graph button
+        climate_button.rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 30)
         ui_y += UI_BUTTON_STEP
         ui_y += UI_SECTION_GAP
 
@@ -607,6 +617,8 @@ while running:
                         section_collapsed["stats"] = not section_collapsed["stats"]
                     elif (not section_collapsed["simulation"]) and export_graph_button.hit(local_pos):
                         launched, graph_status = launch_graph_export(evolution_logger.csv_path)
+                    elif (not section_collapsed["simulation"]) and climate_button.hit(local_pos):
+                        toggle_climate()
                     # Check for Open Output Folder button click
                     elif (not section_collapsed["stats"]) and open_output_folder_button_rect is not None and open_output_folder_button_rect.collidepoint(local_pos):
                         open_output_folder()
@@ -1073,6 +1085,9 @@ while running:
             for slider_key in SIMULATION_SLIDERS:
                 control_sliders[slider_key].draw(ui_surface, font, small_font)
             export_graph_button.draw(ui_surface, small_font)
+            # Draw the climate toggle button
+            climate_button.label = ("Disable Climate" if world.climate_enabled else "Enable Climate")
+            climate_button.draw(ui_surface, small_font)
 
         stats_groups = [
             (

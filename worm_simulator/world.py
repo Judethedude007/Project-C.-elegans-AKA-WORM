@@ -52,7 +52,14 @@ class World:
         self.oxygen_level = float(OXYGEN_LEVEL)
         self.food_growth_rate = float(FOOD_GROWTH_RATE)
         self.mutation_rate = float(MUTATION_RATE)
+
         self.season_speed = float(SEASON_SPEED)
+
+        # Climate toggle state
+        self.climate_enabled = False
+        self.control_temperature = float(TEMPERATURE)
+        self.water_level = float(WATER_LEVEL)
+        self.mutation_rate = float(MUTATION_RATE)
 
         axis = np.linspace(-1.0, 1.0, GRID_SIZE, dtype=np.float32)
         edge_x, edge_y = np.meshgrid(axis, axis, indexing="ij")
@@ -165,7 +172,19 @@ class World:
 
         return mask if np.any(mask) else None
 
+
     def update(self, dt=1 / 60, active_chunks=None):
+        # Climate toggle logic
+        if self.climate_enabled:
+            self.control_temperature += random.uniform(-0.01, 0.01)
+            self.control_temperature = max(0.8, min(1.2, self.control_temperature))
+
+            self.water_level += random.uniform(-0.005, 0.005)
+            self.water_level = max(0.7, min(1.3, self.water_level))
+
+            self.mutation_rate += random.uniform(-0.0001, 0.0001)
+            self.mutation_rate = max(0.005, min(0.05, self.mutation_rate))
+
         time_scale = max(dt * 60.0, 0.0)
         self.season_time += dt
         self.season_phase += self.season_speed * time_scale
