@@ -770,7 +770,8 @@ class Worm:
 
         self.angular_velocity = max(-0.08, min(0.08, self.angular_velocity))
         self.angle += self.angular_velocity * dt * 60
-
+        # Add small random jitter for realism
+        self.angle += random.uniform(-0.05, 0.05)
         self.direction_x = math.cos(self.angle)
         self.direction_y = math.sin(self.angle)
 
@@ -1018,7 +1019,7 @@ class Worm:
         self.energy = max(0.0, self.energy)
 
         # --- Starvation death ---
-        if self.energy <= 0:
+        if self.energy < -50:
             self.dead = True
             self.alive = False
             return False

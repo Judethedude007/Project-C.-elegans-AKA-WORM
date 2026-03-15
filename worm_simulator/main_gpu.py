@@ -900,7 +900,7 @@ while running:
                     intensity = min(255, int(food_value * 255.0))
                     if intensity > 105:
                         pygame.draw.circle(world_surface, (50, 210, 70), (int(sx), int(sy)), 2)
-                        pygame.draw.circle(world_surface, (0, 120, 60), (int(sx), int(sy)), 4, 1)
+                        pygame.draw.circle(world_surface, (0, 120, 60), (int(sx), int(sy)), 2, 1)
                     else:
                         ix = int(sx)
                         iy = int(sy)
@@ -967,6 +967,8 @@ while running:
     screen.blit(world_surface, (0, 0))
 
     avg_energy = (sum(w.energy for w in worms) / len(worms)) if worms else 0.0
+    worm_count = len(worms)
+    egg_count = len(eggs)
     total_food = float(np.sum(world.food))
     total_pheromone = float(np.sum(world.pheromone))
     food_density = total_food / float(GRID_SIZE * GRID_SIZE)
@@ -982,7 +984,8 @@ while running:
     if sim_time >= next_log_time:
         evolution_logger.log(
             sim_time=round(sim_time, 3),
-            worms=len(worms),
+            worms=worm_count,
+            eggs=egg_count,
             avg_energy=round(avg_energy, 3),
             total_births=total_births,
             total_deaths=total_deaths,
@@ -1041,7 +1044,8 @@ while running:
             (
                 "Population",
                 (
-                    f"Worms: {len(worms)}",
+                    f"Worms: {worm_count}",
+                    f"Eggs: {egg_count}",
                     f"Births: {total_births}",
                     f"Deaths: {total_deaths}",
                     f"Lineages: {total_lineages}",
