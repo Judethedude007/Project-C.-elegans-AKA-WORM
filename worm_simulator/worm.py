@@ -232,6 +232,7 @@ class Worm:
         self.vel = [(0.0, 0.0) for _ in range(self.segments)]
         self.muscle_left = [0.0] * SEGMENTS
         self.muscle_right = [0.0] * SEGMENTS
+        self.segment_phase = [0.0] * SEGMENTS
         self.segment_angle = [0.0] * SEGMENTS
         self.num_segments = self.segments
         self.segment_angles = self.segment_angle
@@ -693,8 +694,14 @@ class Worm:
         self.wave_amp = 0.25 + 0.15 * abs(self.turn_signal)
         self.wave_phase += dt * self.wave_freq
 
+        phase_offset = -WAVE_SPACING
+        if self.num_segments > 0:
+            self.segment_phase[0] = self.wave_phase
+            for i in range(1, self.num_segments):
+                self.segment_phase[i] = self.segment_phase[i - 1] + phase_offset
+
         for i in range(self.num_segments):
-            phase = self.wave_phase - i * 0.5
+            phase = self.segment_phase[i]
             bend = math.sin(phase) * self.wave_amp
             self.segment_angles[i] = bend
             self.muscle_left[i] = max(0.0, bend)

@@ -7,6 +7,8 @@ SEASON_DURATION = 300.0
 SEASON_NAMES = ("Spring", "Summer", "Autumn", "Winter")
 SEASON_GROWTH_MULTIPLIER = (1.5, 1.0, 0.6, 0.3)
 SEASON_TEMPERATURE = (22.0, 28.0, 16.0, 6.0)
+LOGISTIC_GROWTH_RATE = 0.0025
+FOOD_MAX_DENSITY = 1.0
 
 
 class World:
@@ -33,6 +35,12 @@ class World:
         self.season_name = SEASON_NAMES[self.season_index]
         self.temperature = SEASON_TEMPERATURE[self.season_index]
 
+        axis = np.linspace(-1.0, 1.0, GRID_SIZE, dtype=np.float32)
+        edge_x, edge_y = np.meshgrid(axis, axis, indexing="ij")
+        radial = np.sqrt(edge_x * edge_x + edge_y * edge_y)
+        edge_factor = np.clip(radial / np.sqrt(2.0), 0.0, 1.0)
+        self.edge_oxygen = 0.65 + 0.35 * edge_factor
+
         for _ in range(6):
             cx = random.uniform(100.0, WORLD_SIZE - 100.0)
             cy = random.uniform(100.0, WORLD_SIZE - 100.0)
@@ -48,7 +56,7 @@ class World:
 
         np.clip(self.food, 0.0, 1.0, out=self.food)
         self.food_capacity[:] = self.food
-        self.oxygen = 1.0 - (self.food * 0.3)
+        self.oxygen = np.clip(self.edge_oxygen - self.food * 0.35, 0.0, 1.0)
 
         for _ in range(5):
             gx = random.randint(0, GRID_SIZE - 1)
@@ -126,8 +134,11 @@ class World:
         active_mask = self._build_active_mask(active_chunks, margin_cells=1)
         self.food_age += dt
 
+        # Logistic bacterial growth gives self-limited patch expansion.
+        logistic_growth = LOGISTIC_GROWTH_RATE * seasonal_growth * self.food * (1.0 - self.food / FOOD_MAX_DENSITY)
+
         # Food patch spreading creates organic cluster growth rather than static fields.
-        food_candidate = self.food + 0.02 * seasonal_growth * (
+        food_candidate = self.food + logistic_growth * time_scale + 0.02 * seasonal_growth * (
             np.roll(self.food, 1, axis=0)
             + np.roll(self.food, -1, axis=0)
             + np.roll(self.food, 1, axis=1)
@@ -151,7 +162,14 @@ class World:
         self.food_age[regrow_mask] = 0.0
 
         np.clip(self.food, 0.0, 1.0, out=self.food)
-        self.oxygen = 1.0 - (self.food * 0.3)
+
+        # Oxygen is higher near plate edges and lower in dense food/worm clusters.
+        oxygen_candidate = self.edge_oxygen - self.food * 0.35 - self.worm_density * 0.2
+        oxygen_candidate = np.clip(oxygen_candidate, 0.0, 1.0)
+        if active_mask is None:
+            self.oxygen = oxygen_candidate
+        else:
+            self.oxygen[active_mask] = oxygen_candidate[active_mask]
         np.clip(self.oxygen, 0.0, 1.0, out=self.oxygen)
 
         # Food releases chemical signal into the smell map.

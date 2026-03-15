@@ -500,14 +500,12 @@ while running:
 
                 food_value = float(world.food[fx, fy])
                 if food_value > 0.01:
-                    intensity = min(255, int(food_value * 5.0 * 255.0))
-                    food_rect = pygame.Rect(
-                        int(sx - cell_px_w * 0.5),
-                        int(sy - cell_px_h * 0.5),
-                        cell_px_w,
-                        cell_px_h,
-                    )
-                    pygame.draw.rect(screen, (0, intensity, 0), food_rect)
+                    intensity = min(255, int(food_value * 20.0))
+                    color = (0, intensity, 0)
+                    pygame.draw.circle(screen, color, (int(sx), int(sy)), 2)
+                    if intensity > 80:
+                        glow_color = (0, max(0, intensity // 3), 0)
+                        pygame.draw.circle(screen, glow_color, (int(sx), int(sy)), 4, 1)
 
                 pheromone_value = float(world.pheromone[fx, fy])
                 if pheromone_value > 0.1:
@@ -526,37 +524,18 @@ while running:
                 continue
 
             worm_rgb = tuple(int(max(0.0, min(1.0, c)) * 255) for c in getattr(worm, "color", (0.8, 0.8, 0.8)))
-            segment_count = len(points)
+            screen_points = []
+            for px, py in points:
+                sx, sy = world_to_screen(px, py, camera_x, camera_y, zoom, world_view_width, screen_height)
+                screen_points.append((int(sx), int(sy)))
 
-            for i in range(segment_count - 1):
-                p1 = points[i]
-                p2 = points[i + 1]
-                x1, y1 = world_to_screen(p1[0], p1[1], camera_x, camera_y, zoom, world_view_width, screen_height)
-                x2, y2 = world_to_screen(p2[0], p2[1], camera_x, camera_y, zoom, world_view_width, screen_height)
+            if len(screen_points) >= 2:
+                thickness = max(3, int(4 * zoom))
+                pygame.draw.lines(screen, worm_rgb, False, screen_points, thickness)
 
-                if (
-                    (x1 < -20 and x2 < -20)
-                    or (x1 > world_view_width + 20 and x2 > world_view_width + 20)
-                    or (y1 < -20 and y2 < -20)
-                    or (y1 > screen_height + 20 and y2 > screen_height + 20)
-                ):
-                    continue
-
-                taper = 1.0 - (i / max(1, segment_count - 1))
-                thickness = max(1, int(6 * taper * max(0.6, min(2.0, zoom * 0.25))))
-                pygame.draw.line(screen, worm_rgb, (int(x1), int(y1)), (int(x2), int(y2)), thickness)
-
-            head_x, head_y = world_to_screen(
-                points[0][0],
-                points[0][1],
-                camera_x,
-                camera_y,
-                zoom,
-                world_view_width,
-                screen_height,
-            )
-            if 0 <= head_x < world_view_width and 0 <= head_y < screen_height:
-                pygame.draw.circle(screen, (255, 255, 255), (int(head_x), int(head_y)), max(2, int(2 + zoom * 0.35)))
+                head_x, head_y = screen_points[0]
+                if 0 <= head_x < world_view_width and 0 <= head_y < screen_height:
+                    pygame.draw.circle(screen, (255, 255, 255), (head_x, head_y), 3)
 
         for egg in eggs:
             sx, sy = world_to_screen(egg.x, egg.y, camera_x, camera_y, zoom, world_view_width, screen_height)
