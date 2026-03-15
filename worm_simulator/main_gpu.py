@@ -1146,14 +1146,6 @@ while running:
             ui_surface.blit(btn_text, (open_output_folder_button_rect.x + 10, open_output_folder_button_rect.y + 4))
             y += 36
 
-            # TEMP: Handle debug 'Scroll to Bottom' button click
-            debug_scroll_to_bottom_button_rect = pygame.Rect(20, y, 200, 28)
-            pygame.draw.rect(ui_surface, (120, 60, 60), debug_scroll_to_bottom_button_rect, border_radius=6)
-            pygame.draw.rect(ui_surface, (255, 180, 180), debug_scroll_to_bottom_button_rect, width=2, border_radius=6)
-            btn_text = small_font.render("Scroll to Bottom (Debug)", True, (255, 255, 255))
-            ui_surface.blit(btn_text, (debug_scroll_to_bottom_button_rect.x + 10, debug_scroll_to_bottom_button_rect.y + 4))
-            y += 36
-
             camera_mode_name = "Free camera" if camera_mode == CAMERA_MODE_FREE else "Follow dominant lineage"
             y += 4
             for line in (
