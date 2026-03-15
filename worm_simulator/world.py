@@ -1,8 +1,12 @@
 import random
 import numpy as np
-from config import WORLD_SIZE
+from config import WORLD_SIZE, WORLD_CHUNK_SIZE
 
 GRID_SIZE = 128
+SEASON_DURATION = 300.0
+SEASON_NAMES = ("Spring", "Summer", "Autumn", "Winter")
+SEASON_GROWTH_MULTIPLIER = (1.5, 1.0, 0.6, 0.3)
+SEASON_TEMPERATURE = (22.0, 28.0, 16.0, 6.0)
 
 
 class World:
@@ -17,13 +21,17 @@ class World:
         self.food = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.food_age = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.food_capacity = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
-        self.food_grid = np.zeros((WORLD_SIZE, WORLD_SIZE), dtype=np.float32)
         self.pheromone = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.chem = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.medium = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.float32)
         self.oxygen = np.ones((GRID_SIZE, GRID_SIZE), dtype=np.float32)
-
-        self._world_to_food_idx = np.linspace(0, GRID_SIZE - 1, WORLD_SIZE).astype(np.int32)
+        self.chunk_world_size = max(1, int(WORLD_CHUNK_SIZE))
+        self.chunk_count = max(1, WORLD_SIZE // self.chunk_world_size)
+        self.chunk_food_cells = max(1, GRID_SIZE // self.chunk_count)
+        self.season_time = 0.0
+        self.season_index = 0
+        self.season_name = SEASON_NAMES[self.season_index]
+        self.temperature = SEASON_TEMPERATURE[self.season_index]
 
         for _ in range(6):
             cx = random.uniform(100.0, WORLD_SIZE - 100.0)
@@ -73,23 +81,72 @@ class World:
                 gy = (cy + dy) % GRID_SIZE
                 self.medium[gx, gy] = value
 
-    def update(self, dt=1 / 60):
+    def get_active_chunks_near_worms(self, worms, radius_chunks=1):
+        active_chunks = set()
+        radius = max(0, int(radius_chunks))
+        for worm in worms:
+            if getattr(worm, "dead", False):
+                continue
+
+            cx = int(float(worm.x) / self.chunk_world_size)
+            cy = int(float(worm.y) / self.chunk_world_size)
+            cx = max(0, min(self.chunk_count - 1, cx))
+            cy = max(0, min(self.chunk_count - 1, cy))
+
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    nx = cx + dx
+                    ny = cy + dy
+                    if 0 <= nx < self.chunk_count and 0 <= ny < self.chunk_count:
+                        active_chunks.add((nx, ny))
+
+        return active_chunks
+
+    def _build_active_mask(self, active_chunks, margin_cells=1):
+        if not active_chunks:
+            return None
+
+        mask = np.zeros((GRID_SIZE, GRID_SIZE), dtype=bool)
+        for cx, cy in active_chunks:
+            x0 = max(0, cx * self.chunk_food_cells - margin_cells)
+            x1 = min(GRID_SIZE, (cx + 1) * self.chunk_food_cells + margin_cells)
+            y0 = max(0, cy * self.chunk_food_cells - margin_cells)
+            y1 = min(GRID_SIZE, (cy + 1) * self.chunk_food_cells + margin_cells)
+            mask[x0:x1, y0:y1] = True
+
+        return mask if np.any(mask) else None
+
+    def update(self, dt=1 / 60, active_chunks=None):
         time_scale = max(dt * 60.0, 0.0)
+        self.season_time += dt
+        self.season_index = int(self.season_time / SEASON_DURATION) % 4
+        self.season_name = SEASON_NAMES[self.season_index]
+        self.temperature = SEASON_TEMPERATURE[self.season_index]
+        seasonal_growth = SEASON_GROWTH_MULTIPLIER[self.season_index]
+        active_mask = self._build_active_mask(active_chunks, margin_cells=1)
         self.food_age += dt
 
         # Food patch spreading creates organic cluster growth rather than static fields.
-        self.food += 0.02 * (
+        food_candidate = self.food + 0.02 * seasonal_growth * (
             np.roll(self.food, 1, axis=0)
             + np.roll(self.food, -1, axis=0)
             + np.roll(self.food, 1, axis=1)
             + np.roll(self.food, -1, axis=1)
             - 4.0 * self.food
         ) * time_scale
-        self.food *= 0.999 ** time_scale
+
+        decay_base = max(0.997, 0.999 - (1.0 - seasonal_growth) * 0.0005)
+        food_candidate *= decay_base ** time_scale
+        if active_mask is None:
+            self.food = food_candidate
+        else:
+            self.food[active_mask] = food_candidate[active_mask]
 
         # Sparse regrowth seeds new patches where food is depleted.
-        regrow_chance = min(1.0, 0.0005 * time_scale)
+        regrow_chance = min(1.0, 0.0005 * time_scale * seasonal_growth)
         regrow_mask = (self.food < 0.1) & (np.random.random(self.food.shape) < regrow_chance)
+        if active_mask is not None:
+            regrow_mask &= active_mask
         self.food[regrow_mask] += 0.05
         self.food_age[regrow_mask] = 0.0
 
@@ -97,10 +154,12 @@ class World:
         self.oxygen = 1.0 - (self.food * 0.3)
         np.clip(self.oxygen, 0.0, 1.0, out=self.oxygen)
 
-        self.food_grid = self.food[np.ix_(self._world_to_food_idx, self._world_to_food_idx)]
-
         # Food releases chemical signal into the smell map.
-        self.chem += self.food * 2.5 * time_scale
+        chem_release = self.food * 2.5 * seasonal_growth * time_scale
+        if active_mask is None:
+            self.chem += chem_release
+        else:
+            self.chem[active_mask] += chem_release[active_mask]
 
         # Diffuse chemical concentration to neighboring cells.
         new_chem = np.zeros_like(self.chem)
@@ -114,14 +173,21 @@ class World:
             )
             * 0.075
         )
-        self.chem = np.clip(new_chem, 0.0, 100.0)
+        if active_mask is None:
+            self.chem = np.clip(new_chem, 0.0, 100.0)
+        else:
+            self.chem[active_mask] = np.clip(new_chem[active_mask], 0.0, 100.0)
 
         if random.random() < 0.001:
             max_val = max(max(row) for row in self.chem)
             print("chem max:", max_val)
 
         # Pheromone decays slowly over time.
-        self.pheromone *= 0.995 ** time_scale
+        pheromone_decay = 0.995 ** time_scale
+        if active_mask is None:
+            self.pheromone *= pheromone_decay
+        else:
+            self.pheromone[active_mask] *= pheromone_decay
         np.clip(self.pheromone, 0.0, 1000.0, out=self.pheromone)
 
     def get_food(self, x, y):

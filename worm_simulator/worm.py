@@ -254,13 +254,10 @@ class Worm:
 
     def sense_food(self, world):
 
-        x = int(self.x) % WORLD_SIZE
-        y = int(self.y) % WORLD_SIZE
-
-        left = world.food_grid[(x - 3) % WORLD_SIZE, y]
-        right = world.food_grid[(x + 3) % WORLD_SIZE, y]
-        up = world.food_grid[x, (y - 3) % WORLD_SIZE]
-        down = world.food_grid[x, (y + 3) % WORLD_SIZE]
+        left = world.sample_food(self.x - 3, self.y)
+        right = world.sample_food(self.x + 3, self.y)
+        up = world.sample_food(self.x, self.y - 3)
+        down = world.sample_food(self.x, self.y + 3)
 
         return left, right, up, down
 

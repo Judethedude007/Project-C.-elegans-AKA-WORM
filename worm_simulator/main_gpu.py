@@ -19,7 +19,6 @@ from gpu_renderer import GPURenderer
 
 ZOOM_MIN = 1.0
 ZOOM_MAX = 20.0
-CAMERA_STEP = 12.0
 DEFAULT_ZOOM = 2.0
 WORM_THICKNESS_SCALE = 2.0
 TARGET_FPS = 60
@@ -28,16 +27,19 @@ RENDER_GRID_STEP = 4
 DEBUG_VISIBILITY_LOG_INTERVAL = 1.0
 CAMERA_SMOOTHING = 0.05
 TRAIL_STEPS = 28
+PANEL_WIDTH = 260
+CAMERA_MODE_FREE = 0
+CAMERA_MODE_DOMINANT = 1
 
 pygame.init()
-
-screen = pygame.display.set_mode(
-    (SCREEN_WIDTH, SCREEN_HEIGHT),
-    pygame.OPENGL | pygame.DOUBLEBUF | pygame.HWSURFACE,
-    vsync=1,
-)
+display_flags = pygame.OPENGL | pygame.DOUBLEBUF | pygame.HWSURFACE
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), display_flags, vsync=1)
 pygame.display.set_caption("Worm Simulator GPU")
 font = pygame.font.Font(None, 24)
+small_font = pygame.font.Font(None, 20)
+fullscreen = False
+screen_width, screen_height = screen.get_size()
+world_view_width = max(1, screen_width - PANEL_WIDTH)
 
 if IMGUI_AVAILABLE:
     imgui.create_context()
@@ -50,6 +52,7 @@ worms = []
 eggs = []
 
 renderer = GPURenderer(SCREEN_WIDTH, SCREEN_HEIGHT)
+renderer.ctx.viewport = (0, 0, world_view_width, screen_height)
 clock = pygame.time.Clock()
 accumulator = 0.0
 
@@ -64,8 +67,7 @@ camera_x = avg_x
 camera_y = avg_y
 zoom = DEFAULT_ZOOM
 
-follow_index = 0
-follow_mode = True
+camera_mode = CAMERA_MODE_FREE
 births_per_sec = 0.0
 deaths_per_sec = 0.0
 total_births = 0
@@ -145,6 +147,28 @@ def spawn_worm_near_food():
     return Worm(x, y, inherited_genes={"generation": 0})
 
 
+def toggle_fullscreen_state(current_fullscreen):
+    next_fullscreen = not current_fullscreen
+    flags = display_flags | (pygame.FULLSCREEN if next_fullscreen else 0)
+    size = (0, 0) if next_fullscreen else (SCREEN_WIDTH, SCREEN_HEIGHT)
+    new_screen = pygame.display.set_mode(size, flags, vsync=1)
+    new_width, new_height = new_screen.get_size()
+    new_world_width = max(1, new_width - PANEL_WIDTH)
+    return next_fullscreen, new_screen, new_width, new_height, new_world_width
+
+
+def world_to_screen(world_x, world_y, camera_x, camera_y, zoom, view_width, view_height):
+    camera_norm_x = (camera_x / WORLD_SIZE) * world_scale
+    camera_norm_y = (camera_y / WORLD_SIZE) * world_scale
+    norm_x = (world_x / WORLD_SIZE) * world_scale
+    norm_y = (world_y / WORLD_SIZE) * world_scale
+    clip_x = (norm_x - camera_norm_x) * zoom
+    clip_y = (norm_y - camera_norm_y) * zoom
+    screen_x = (clip_x * 0.5 + 0.5) * view_width
+    screen_y = (0.5 - clip_y * 0.5) * view_height
+    return screen_x, screen_y
+
+
 for _ in range(INITIAL_WORMS):
     worms.append(spawn_worm_near_food())
 
@@ -193,9 +217,13 @@ while running:
             zoom = max(ZOOM_MIN, min(zoom, ZOOM_MAX))
 
             if event.key == pygame.K_f:
-                follow_mode = not follow_mode
-            if event.key == pygame.K_TAB and worms:
-                follow_index = (follow_index + 1) % len(worms)
+                fullscreen, screen, screen_width, screen_height, world_view_width = toggle_fullscreen_state(fullscreen)
+                renderer.ctx.viewport = (0, 0, world_view_width, screen_height)
+            if event.key == pygame.K_c:
+                if camera_mode == CAMERA_MODE_FREE:
+                    camera_mode = CAMERA_MODE_DOMINANT
+                else:
+                    camera_mode = CAMERA_MODE_FREE
 
         if event.type == pygame.MOUSEWHEEL:
             if event.y > 0:
@@ -206,33 +234,22 @@ while running:
 
     keys = pygame.key.get_pressed()
     cam_speed = 10.0 / max(zoom, 1e-3)
-    pan_requested = (
-        keys[pygame.K_a]
-        or keys[pygame.K_LEFT]
-        or keys[pygame.K_d]
-        or keys[pygame.K_RIGHT]
-        or keys[pygame.K_w]
-        or keys[pygame.K_UP]
-        or keys[pygame.K_s]
-        or keys[pygame.K_DOWN]
-    )
-    if pan_requested:
-        follow_mode = False
-
-    if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-        camera_x -= cam_speed
-    if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-        camera_x += cam_speed
-    if keys[pygame.K_w] or keys[pygame.K_UP]:
-        camera_y -= cam_speed
-    if keys[pygame.K_s] or keys[pygame.K_DOWN]:
-        camera_y += cam_speed
+    if camera_mode == CAMERA_MODE_FREE:
+        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+            camera_x -= cam_speed
+        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+            camera_x += cam_speed
+        if keys[pygame.K_w] or keys[pygame.K_UP]:
+            camera_y -= cam_speed
+        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+            camera_y += cam_speed
 
     births = 0
     deaths = 0
 
     while accumulator >= FIXED_DT:
-        world.update(FIXED_DT)
+        active_chunks = world.get_active_chunks_near_worms(worms, radius_chunks=2)
+        world.update(FIXED_DT, active_chunks=active_chunks)
         world.set_worm_positions(worms)
 
         pre_count = len(worms)
@@ -311,11 +328,21 @@ while running:
             worm.body = [(worm.x, worm.y) for _ in range(SEGMENTS)]
             worm.vel = [(0.0, 0.0) for _ in range(SEGMENTS)]
 
-    if worms:
-        if follow_mode:
-            target = worms[follow_index % len(worms)]
-            camera_x += (target.x - camera_x) * CAMERA_SMOOTHING
-            camera_y += (target.y - camera_y) * CAMERA_SMOOTHING
+    if worms and camera_mode == CAMERA_MODE_DOMINANT:
+        lineage_centers = {}
+        for worm in worms:
+            lineage_id = int(getattr(worm, "lineage_id", -1))
+            if lineage_id not in lineage_centers:
+                lineage_centers[lineage_id] = [0.0, 0.0, 0]
+            lineage_centers[lineage_id][0] += float(worm.x)
+            lineage_centers[lineage_id][1] += float(worm.y)
+            lineage_centers[lineage_id][2] += 1
+
+        dominant_data = max(lineage_centers.values(), key=lambda item: item[2])
+        target_x = dominant_data[0] / max(1, dominant_data[2])
+        target_y = dominant_data[1] / max(1, dominant_data[2])
+        camera_x += (target_x - camera_x) * CAMERA_SMOOTHING
+        camera_y += (target_y - camera_y) * CAMERA_SMOOTHING
 
     camera_x = max(0.0, min(camera_x, float(WORLD_SIZE)))
     camera_y = max(0.0, min(camera_y, float(WORLD_SIZE)))
@@ -366,12 +393,12 @@ while running:
     chem_buckets = [[] for _ in range(5)]
     pheromone_positions = []
 
-    for x in range(0, WORLD_SIZE, RENDER_GRID_STEP):
-        for y in range(0, WORLD_SIZE, RENDER_GRID_STEP):
-            gx = (x / WORLD_SIZE) * world_scale
-            gy = (y / WORLD_SIZE) * world_scale
+    for x in range(0, GRID_SIZE, 1):
+        for y in range(0, GRID_SIZE, 1):
+            gx = ((x + 0.5) / GRID_SIZE) * world_scale
+            gy = ((y + 0.5) / GRID_SIZE) * world_scale
 
-            food_value = world.food_grid[x, y]
+            food_value = world.food[x, y]
             if food_value > 0.7 and random.random() < 0.18:
                 food_high.append([gx, gy])
             elif food_value > 0.3 and random.random() < 0.12:
@@ -429,11 +456,11 @@ while running:
     empty_points = np.empty((0, 2), dtype="f4")
 
     if view_mode == 0:
-        render_worm_strips = worm_strips
+        render_worm_strips = []
         render_food_layers = food_layers
         render_chemical_layers = []
         render_pheromone_positions = empty_points
-        render_head_positions = head_positions
+        render_head_positions = empty_points
     elif view_mode == 1:
         render_worm_strips = []
         render_food_layers = []
@@ -459,112 +486,82 @@ while running:
     )
 
     if view_mode == 0:
-        camera_norm_x = (camera_x / WORLD_SIZE) * world_scale
-        camera_norm_y = (camera_y / WORLD_SIZE) * world_scale
+        cell_px_w = max(1, int((world_view_width * zoom) / (2.0 * GRID_SIZE)))
+        cell_px_h = max(1, int((screen_height * zoom) / (2.0 * GRID_SIZE)))
+
+        for fx in range(GRID_SIZE):
+            for fy in range(GRID_SIZE):
+                center_x = ((fx + 0.5) / GRID_SIZE) * WORLD_SIZE
+                center_y = ((fy + 0.5) / GRID_SIZE) * WORLD_SIZE
+                sx, sy = world_to_screen(center_x, center_y, camera_x, camera_y, zoom, world_view_width, screen_height)
+
+                if sx < -cell_px_w or sx > world_view_width + cell_px_w or sy < -cell_px_h or sy > screen_height + cell_px_h:
+                    continue
+
+                food_value = float(world.food[fx, fy])
+                if food_value > 0.01:
+                    intensity = min(255, int(food_value * 5.0 * 255.0))
+                    food_rect = pygame.Rect(
+                        int(sx - cell_px_w * 0.5),
+                        int(sy - cell_px_h * 0.5),
+                        cell_px_w,
+                        cell_px_h,
+                    )
+                    pygame.draw.rect(screen, (0, intensity, 0), food_rect)
+
+                pheromone_value = float(world.pheromone[fx, fy])
+                if pheromone_value > 0.1:
+                    blue = min(180, int(pheromone_value * 0.25))
+                    pher_rect = pygame.Rect(
+                        int(sx - cell_px_w * 0.5),
+                        int(sy - cell_px_h * 0.5),
+                        cell_px_w,
+                        cell_px_h,
+                    )
+                    pygame.draw.rect(screen, (0, 0, blue), pher_rect)
+
         for worm in worms:
-            if not worm.body:
+            points = worm.body_points()
+            if len(points) < 2:
                 continue
 
             worm_rgb = tuple(int(max(0.0, min(1.0, c)) * 255) for c in getattr(worm, "color", (0.8, 0.8, 0.8)))
-            trail_points = worm.trail[-TRAIL_STEPS:]
-            trail_count = len(trail_points)
-            if trail_count >= 2:
-                for i in range(1, trail_count):
-                    prev = trail_points[i - 1]
-                    curr = trail_points[i]
-                    fade = i / float(trail_count - 1)
+            segment_count = len(points)
 
-                    prev_norm_x = (prev[0] / WORLD_SIZE) * world_scale
-                    prev_norm_y = (prev[1] / WORLD_SIZE) * world_scale
-                    curr_norm_x = (curr[0] / WORLD_SIZE) * world_scale
-                    curr_norm_y = (curr[1] / WORLD_SIZE) * world_scale
+            for i in range(segment_count - 1):
+                p1 = points[i]
+                p2 = points[i + 1]
+                x1, y1 = world_to_screen(p1[0], p1[1], camera_x, camera_y, zoom, world_view_width, screen_height)
+                x2, y2 = world_to_screen(p2[0], p2[1], camera_x, camera_y, zoom, world_view_width, screen_height)
 
-                    prev_clip_x = (prev_norm_x - camera_norm_x) * zoom
-                    prev_clip_y = (prev_norm_y - camera_norm_y) * zoom
-                    curr_clip_x = (curr_norm_x - camera_norm_x) * zoom
-                    curr_clip_y = (curr_norm_y - camera_norm_y) * zoom
-
-                    px = (prev_clip_x * 0.5 + 0.5) * SCREEN_WIDTH
-                    py = (0.5 - prev_clip_y * 0.5) * SCREEN_HEIGHT
-                    cx = (curr_clip_x * 0.5 + 0.5) * SCREEN_WIDTH
-                    cy = (0.5 - curr_clip_y * 0.5) * SCREEN_HEIGHT
-
-                    if (
-                        0 <= px < SCREEN_WIDTH
-                        and 0 <= py < SCREEN_HEIGHT
-                        and 0 <= cx < SCREEN_WIDTH
-                        and 0 <= cy < SCREEN_HEIGHT
-                    ):
-                        trail_color = tuple(max(16, int(channel * (0.15 + 0.55 * fade))) for channel in worm_rgb)
-                        trail_width = max(1, int((0.6 + 1.6 * fade) * max(1.0, zoom * 0.25)))
-                        pygame.draw.line(screen, trail_color, (int(px), int(py)), (int(cx), int(cy)), trail_width)
-
-            hx, hy = worm.body[0]
-            head_x = (hx / WORLD_SIZE) * world_scale
-            head_y = (hy / WORLD_SIZE) * world_scale
-
-            clip_x = (head_x - camera_norm_x) * zoom
-            clip_y = (head_y - camera_norm_y) * zoom
-
-            hx = (clip_x * 0.5 + 0.5) * SCREEN_WIDTH
-            hy = (0.5 - clip_y * 0.5) * SCREEN_HEIGHT
-            radius = max(3, int(4 * zoom))
-
-            if 0 <= hx < SCREEN_WIDTH and 0 <= hy < SCREEN_HEIGHT:
-                # draw worm head
-                pygame.draw.circle(
-                    screen,
-                    worm_rgb,
-                    (int(hx), int(hy)),
-                    radius,
-                )
-
-                glow_radius = max(radius + 1, int(radius * 1.45))
-                pygame.draw.circle(
-                    screen,
-                    (180, 180, 180),
-                    (int(hx), int(hy)),
-                    glow_radius,
-                    1,
-                )
-                pygame.draw.circle(
-                    screen,
-                    (255, 255, 255),
-                    (int(hx), int(hy)),
-                    max(2, int(2 + zoom * 0.35)),
-                )
-
-        # draw eggs as small red circles
-        for egg in eggs:
-            egg_norm_x = (egg.x / WORLD_SIZE) * world_scale
-            egg_norm_y = (egg.y / WORLD_SIZE) * world_scale
-            clip_x = (egg_norm_x - camera_norm_x) * zoom
-            clip_y = (egg_norm_y - camera_norm_y) * zoom
-            sx = (clip_x * 0.5 + 0.5) * SCREEN_WIDTH
-            sy = (0.5 - clip_y * 0.5) * SCREEN_HEIGHT
-            if 0 <= sx < SCREEN_WIDTH and 0 <= sy < SCREEN_HEIGHT:
-                pygame.draw.circle(screen, (255, 80, 80), (int(sx), int(sy)), 2)
-
-        # Keep food patches visible when zoomed out by drawing cell-level indicators.
-        for fx in range(GRID_SIZE):
-            for fy in range(GRID_SIZE):
-                food_value = float(world.food[fx, fy])
-                if food_value <= 0.03:
+                if (
+                    (x1 < -20 and x2 < -20)
+                    or (x1 > world_view_width + 20 and x2 > world_view_width + 20)
+                    or (y1 < -20 and y2 < -20)
+                    or (y1 > screen_height + 20 and y2 > screen_height + 20)
+                ):
                     continue
 
-                food_world_x = ((fx + 0.5) / GRID_SIZE) * WORLD_SIZE
-                food_world_y = ((fy + 0.5) / GRID_SIZE) * WORLD_SIZE
-                food_norm_x = (food_world_x / WORLD_SIZE) * world_scale
-                food_norm_y = (food_world_y / WORLD_SIZE) * world_scale
-                food_clip_x = (food_norm_x - camera_norm_x) * zoom
-                food_clip_y = (food_norm_y - camera_norm_y) * zoom
-                food_sx = (food_clip_x * 0.5 + 0.5) * SCREEN_WIDTH
-                food_sy = (0.5 - food_clip_y * 0.5) * SCREEN_HEIGHT
+                taper = 1.0 - (i / max(1, segment_count - 1))
+                thickness = max(1, int(6 * taper * max(0.6, min(2.0, zoom * 0.25))))
+                pygame.draw.line(screen, worm_rgb, (int(x1), int(y1)), (int(x2), int(y2)), thickness)
 
-                if 0 <= food_sx < SCREEN_WIDTH and 0 <= food_sy < SCREEN_HEIGHT:
-                    color = min(255, int(food_value * 255.0))
-                    radius = 2 if food_value > 0.2 else 1
-                    pygame.draw.circle(screen, (0, color, 0), (int(food_sx), int(food_sy)), radius)
+            head_x, head_y = world_to_screen(
+                points[0][0],
+                points[0][1],
+                camera_x,
+                camera_y,
+                zoom,
+                world_view_width,
+                screen_height,
+            )
+            if 0 <= head_x < world_view_width and 0 <= head_y < screen_height:
+                pygame.draw.circle(screen, (255, 255, 255), (int(head_x), int(head_y)), max(2, int(2 + zoom * 0.35)))
+
+        for egg in eggs:
+            sx, sy = world_to_screen(egg.x, egg.y, camera_x, camera_y, zoom, world_view_width, screen_height)
+            if 0 <= sx < world_view_width and 0 <= sy < screen_height:
+                pygame.draw.circle(screen, (255, 80, 80), (int(sx), int(sy)), 2)
 
     avg_energy = (sum(w.energy for w in worms) / len(worms)) if worms else 0.0
     total_food = float(np.sum(world.food))
@@ -579,49 +576,75 @@ while running:
     dominant_lineage = max(lineage_counts, key=lineage_counts.get) if lineage_counts else -1
     largest_colony = max(lineage_counts.values()) if lineage_counts else 0
 
-    if imgui_renderer:
-        imgui_renderer.process_inputs()
-        imgui.new_frame()
-        imgui.begin("Simulation")
-        imgui.text(f"Worms: {len(worms)}")
-        imgui.text(f"Eggs: {len(eggs)}")
-        imgui.text(f"Generation: {max_generation}")
-        imgui.text(f"Births: {total_births}")
-        imgui.text(f"Deaths: {total_deaths}")
-        imgui.text(f"Avg Energy: {avg_energy:.1f}")
-        imgui.text(f"Food Total: {total_food:.1f}")
-        imgui.text(f"Pheromone Total: {total_pheromone:.1f}")
-        imgui.text(f"Births/s: {births_per_sec:.2f}")
-        imgui.text(f"Deaths/s: {deaths_per_sec:.2f}")
-        imgui.text(f"Dominant lineage: {dominant_lineage}")
-        imgui.text(f"Largest colony: {largest_colony} worms")
-        imgui.text(f"Total lineages: {total_lineages}")
-        imgui.text(f"Speed: {simulation_speed:.1f}x")
-        imgui.text(f"View: {view_mode} (1:Eco 2:Chem 3:Phero)")
-        imgui.text(f"Zoom: {zoom:.2f}")
-        imgui.text(f"Follow: {'ON' if follow_mode else 'OFF'}")
-        imgui.end()
-        imgui.render()
-        imgui_renderer.render(imgui.get_draw_data())
-    else:
-        pygame.display.set_caption(
-            f"Worm Simulator GPU | Worms:{len(worms)} Eggs:{len(eggs)} Gen:{max_generation} "
-            f"Births:{total_births} Deaths:{total_deaths} AvgEnergy:{avg_energy:.1f} "
-            f"Food:{total_food:.0f} Phero:{total_pheromone:.0f} "
-            f"B/s:{births_per_sec:.2f} D/s:{deaths_per_sec:.2f} "
-            f"DomLineage:{dominant_lineage} Largest:{largest_colony} Lineages:{total_lineages} "
-            f"Speed:{simulation_speed:.1f}x View:{view_mode} Zoom:{zoom:.2f}"
-        )
+    panel_rect = pygame.Rect(world_view_width, 0, PANEL_WIDTH, screen_height)
+    pygame.draw.rect(screen, (24, 24, 24), panel_rect)
+    pygame.draw.line(screen, (70, 70, 70), (world_view_width, 0), (world_view_width, screen_height), 2)
 
-    pygame.draw.rect(screen, (10, 10, 10), (8, 8, 340, 76))
-    overlay_lines = [
+    panel_x = world_view_width + 12
+    y = 12
+
+    title = font.render("Simulation Panel", True, (235, 235, 235))
+    screen.blit(title, (panel_x, y))
+    y += 28
+
+    section_color = (190, 210, 255)
+    value_color = (230, 230, 230)
+
+    screen.blit(font.render("Population", True, section_color), (panel_x, y))
+    y += 22
+    for line in (
+        f"Worms: {len(worms)}",
+        f"Eggs: {len(eggs)}",
+        f"Births: {total_births}",
+        f"Deaths: {total_deaths}",
+    ):
+        screen.blit(small_font.render(line, True, value_color), (panel_x, y))
+        y += 18
+
+    y += 6
+    screen.blit(font.render("Environment", True, section_color), (panel_x, y))
+    y += 22
+    for line in (
+        f"Food: {total_food:.1f}",
+        f"Pheromones: {total_pheromone:.1f}",
         f"Food density: {food_density:.3f}",
-        f"Pheromone density: {pheromone_density:.3f}",
-        f"Worm count: {len(worms)}",
-    ]
-    for idx, line in enumerate(overlay_lines):
-        overlay_surface = font.render(line, True, (255, 255, 255))
-        screen.blit(overlay_surface, (14, 12 + idx * 22))
+        f"Temperature: {world.temperature:.1f} C",
+        f"Season: {world.season_name}",
+    ):
+        screen.blit(small_font.render(line, True, value_color), (panel_x, y))
+        y += 18
+
+    y += 6
+    screen.blit(font.render("Evolution", True, section_color), (panel_x, y))
+    y += 22
+    for line in (
+        f"Lineages: {total_lineages}",
+        f"Dominant lineage: {dominant_lineage}",
+        f"Generation: {max_generation}",
+        f"Largest colony: {largest_colony}",
+        f"Births/s: {births_per_sec:.2f}",
+        f"Deaths/s: {deaths_per_sec:.2f}",
+    ):
+        screen.blit(small_font.render(line, True, value_color), (panel_x, y))
+        y += 18
+
+    y += 6
+    screen.blit(font.render("Controls", True, section_color), (panel_x, y))
+    y += 22
+    camera_mode_name = "Free camera" if camera_mode == CAMERA_MODE_FREE else "Follow dominant lineage"
+    for line in (
+        f"Mode: {camera_mode_name}",
+        f"View: {view_mode} (1/2/3)",
+        f"Speed: {simulation_speed:.1f}x (4-7)",
+        "F: Fullscreen",
+        "C: Camera mode",
+        "WASD / Arrows: Pan",
+        "Q/E or +/-: Zoom",
+    ):
+        screen.blit(small_font.render(line, True, value_color), (panel_x, y))
+        y += 18
+
+    pygame.display.set_caption("Worm Simulator GPU - Phase 21")
 
     pygame.display.flip()
 
