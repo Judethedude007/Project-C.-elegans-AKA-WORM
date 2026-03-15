@@ -1,3 +1,11 @@
+# --- Season Progress Bar Drawing Function ---
+def draw_progress_bar(surface, x, y, width, height, progress, color, bg_color=(60,60,70)):
+    pygame.draw.rect(surface, bg_color, (x, y, width, height), border_radius=6)
+    fill_width = int(width * max(0.0, min(1.0, progress)))
+    if fill_width > 0:
+        pygame.draw.rect(surface, color, (x, y, fill_width, height), border_radius=6)
+    pygame.draw.rect(surface, (120, 120, 120), (x, y, width, height), width=1, border_radius=6)
+
 import random
 import math
 import os
@@ -295,7 +303,7 @@ def update_ui_layout(scroll_offset):
         climate_button.rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 30)
         ui_y += UI_BUTTON_STEP
         # Add extra gap before the season speed slider
-        ui_y += 32
+        ui_y += 12
         control_sliders["season_speed"].rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 20)
         ui_y += UI_SLIDER_STEP
         ui_y += UI_SECTION_GAP
@@ -1144,6 +1152,24 @@ while running:
             climate_button.draw(ui_surface, small_font)
             # Draw the season speed slider directly under the climate button
             control_sliders["season_speed"].draw(ui_surface, font, small_font)
+            # Draw the season progress bar under the season speed slider
+            bar_x = control_sliders["season_speed"].rect.x
+            bar_y = control_sliders["season_speed"].rect.y + control_sliders["season_speed"].rect.height + 12
+            bar_width = control_sliders["season_speed"].rect.width
+            bar_height = 18
+            bar_color = SEASON_COLORS.get(world.season_name, (200, 200, 200))
+            draw_progress_bar(
+                ui_surface,
+                bar_x,
+                bar_y,
+                bar_width,
+                bar_height,
+                world.season_progress,
+                bar_color
+            )
+            # Draw label above the bar
+            label = small_font.render("Season Progress", True, (220, 220, 220))
+            ui_surface.blit(label, (bar_x, bar_y - 20))
 
         stats_groups = [
             (

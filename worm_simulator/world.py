@@ -22,6 +22,19 @@ FOOD_MAX_DENSITY = 1.0
 
 
 class World:
+    @property
+    def season_progress(self):
+        """
+        Returns the progress through the current season as a float in [0.0, 1.0).
+        Each season is a quarter of the full 2π phase cycle.
+        """
+        # Normalize phase to [0, 2π)
+        phase = self.season_phase % (2.0 * math.pi)
+        # Each season is 1/4 of the cycle
+        season_length = (2.0 * math.pi) / 4.0
+        # Progress within the current season
+        progress = (phase % season_length) / season_length
+        return progress
 
     def __init__(self):
         self.width = WORLD_SIZE
