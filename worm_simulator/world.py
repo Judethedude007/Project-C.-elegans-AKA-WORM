@@ -66,6 +66,18 @@ class World:
         self.food_growth_rate = float(FOOD_GROWTH_RATE)
         self.mutation_rate = float(MUTATION_RATE)
 
+        # --- Seasonal Effects Table and State ---
+        self.seasons = ["Spring", "Summer", "Autumn", "Winter"]
+        self.current_season = "Spring"
+        self.season_timer = 0.0
+        self.season_speed = 0.05  # or from config/UI
+        self.season_effects = {
+            "Spring": {"food_growth": 1.4, "worm_speed": 1.1, "metabolism": 1.05},
+            "Summer": {"food_growth": 1.2, "worm_speed": 1.05, "metabolism": 1.0},
+            "Autumn": {"food_growth": 0.9, "worm_speed": 0.95, "metabolism": 0.95},
+            "Winter": {"food_growth": 0.5, "worm_speed": 0.75, "metabolism": 0.8},
+        }
+
         self.season_speed = float(SEASON_SPEED)
 
         # Climate toggle state
@@ -187,6 +199,15 @@ class World:
 
 
     def update(self, dt=1 / 60, active_chunks=None):
+                # --- Season cycling logic (new table-based system) ---
+                self.season_timer += dt * self.season_speed
+                if self.season_timer > 1.0:
+                    self.season_timer = 0.0
+                    self.advance_season()
+
+    def advance_season(self):
+        i = self.seasons.index(self.current_season)
+        self.current_season = self.seasons[(i + 1) % len(self.seasons)]
         # Climate toggle logic
         if self.climate_enabled:
             self.control_temperature += random.uniform(-0.01, 0.01)
