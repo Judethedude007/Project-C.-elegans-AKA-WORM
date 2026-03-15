@@ -77,7 +77,7 @@ BACKGROUND_STAR_COUNT = 200
 GRID_OVERLAY_STEP = 80
 ENVIRONMENT_SLIDERS = ("temperature", "water", "oxygen", "food_growth")
 EVOLUTION_SLIDERS = ("mutation",)
-SIMULATION_SLIDERS = ("sim_speed",)
+SIMULATION_SLIDERS = ("sim_speed", "season_speed")
 
 pygame.init()
 display_flags = pygame.DOUBLEBUF | pygame.HWSURFACE
@@ -96,6 +96,13 @@ show_ui = True
 
 # Correct output folder path
 OUTPUT_FOLDER_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../openworm/output'))
+
+SEASON_COLORS = {
+    "Spring": (60, 200, 60),
+    "Summer": (220, 220, 60),
+    "Autumn": (255, 140, 40),
+    "Winter": (80, 120, 255),
+}
 
 def open_output_folder():
     import os
@@ -287,7 +294,8 @@ def update_ui_layout(scroll_offset):
         # Place the climate button below the export graph button
         climate_button.rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 30)
         ui_y += UI_BUTTON_STEP
-        # Place the season speed slider directly under the climate button
+        # Add extra gap before the season speed slider
+        ui_y += 32
         control_sliders["season_speed"].rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 20)
         ui_y += UI_SLIDER_STEP
         ui_y += UI_SECTION_GAP
@@ -1130,10 +1138,8 @@ while running:
 
         if not section_collapsed["simulation"]:
             for slider_key in SIMULATION_SLIDERS:
-                if slider_key != "season_speed":
-                    control_sliders[slider_key].draw(ui_surface, font, small_font)
+                control_sliders[slider_key].draw(ui_surface, font, small_font)
             export_graph_button.draw(ui_surface, small_font)
-            # Draw the climate toggle button
             climate_button.label = ("Disable Climate" if world.climate_enabled else "Enable Climate")
             climate_button.draw(ui_surface, small_font)
             # Draw the season speed slider directly under the climate button
@@ -1146,7 +1152,7 @@ while running:
                     f"Temperature: {world.temperature:.1f} C",
                     f"Water: {world.water_level:.2f}",
                     f"Oxygen: {world.oxygen_level:.2f}",
-                    f"Season: {world.season_name}",
+                    # Season line will be handled separately
                     f"Food Total: {total_food:.1f}",
                 ),
             ),
@@ -1192,6 +1198,13 @@ while running:
                 ui_surface.blit(small_font.render(group_title, True, (170, 200, 255)), (20, y))
                 y += UI_STATS_LINE_HEIGHT
                 for line in lines:
+                    # Custom season color rendering
+                    if group_title == "Environment" and line.startswith("Food Total"):
+                        season_color = SEASON_COLORS.get(world.season_name, (200, 200, 200))
+                        season_text = f"Season: {world.season_name}"
+                        season_render = small_font.render(season_text, True, season_color)
+                        ui_surface.blit(season_render, (20, y))
+                        y += UI_STATS_LINE_HEIGHT
                     ui_surface.blit(small_font.render(line, True, (230, 230, 230)), (20, y))
                     y += UI_STATS_LINE_HEIGHT
                 y += 4

@@ -187,13 +187,14 @@ class World:
 
         time_scale = max(dt * 60.0, 0.0)
         self.season_time += dt
-        self.season_phase += self.season_speed * time_scale
-        self.season_signal = math.sin(self.season_phase)
-        phase_norm = (self.season_phase % (2.0 * math.pi)) / (2.0 * math.pi)
-        self.season_index = int(phase_norm * 4.0) % 4
-        self.season_name = SEASON_NAMES[self.season_index]
-        self.base_temperature = SEASON_TEMPERATURE[self.season_index]
-        self.temperature = self.base_temperature * self.control_temperature
+        if self.climate_enabled:
+            self.season_phase += self.season_speed * time_scale
+            self.season_signal = math.sin(self.season_phase)
+            phase_norm = (self.season_phase % (2.0 * math.pi)) / (2.0 * math.pi)
+            self.season_index = int(phase_norm * 4.0) % 4
+            self.season_name = SEASON_NAMES[self.season_index]
+            self.base_temperature = SEASON_TEMPERATURE[self.season_index]
+            self.temperature = self.base_temperature * self.control_temperature
         seasonal_growth = 0.5 + 0.5 * self.season_signal
         active_mask = self._build_active_mask(active_chunks, margin_cells=1)
         self.food_age += dt
