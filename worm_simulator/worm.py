@@ -91,50 +91,71 @@ class Egg:
 
 
 class Worm:
-    def update(self, world, dt=1 / 60, new_worms=None, new_eggs=None, nearby_worms=None):
-        # ...existing code...
-        gx = int(self.x / WORLD_SIZE * GRID_SIZE)
-        gy = int(self.y / WORLD_SIZE * GRID_SIZE)
-        food_here = 0.0
-        if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
-            food_here = float(world.food[gx, gy])
 
-        # Worms follow pheromone gradients
-        px = 0
-        py = 0
-        for dx in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
-                nx = gx + dx
-                ny = gy + dy
-                if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
-                    value = world.pheromone[nx, ny]
-                    px += dx * value
-                    py += dy * value
-
-        if abs(px) > 1e-6 or abs(py) > 1e-6:
-            pheromone_angle = math.atan2(py, px)
-            self.angle += (pheromone_angle - self.angle) * 0.01
-
-        # Food chemotaxis (food gradient following)
-        food_x = 0
-        food_y = 0
-        for dx in [-2, -1, 0, 1, 2]:
-            for dy in [-2, -1, 0, 1, 2]:
-                nx = gx + dx
-                ny = gy + dy
-                if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
-                    value = world.food[nx, ny]
-                    food_x += dx * value
-                    food_y += dy * value
-
-        if abs(food_x) > 1e-6 or abs(food_y) > 1e-6:
-            food_angle = math.atan2(food_y, food_x)
-            delta = math.atan2(
-                math.sin(food_angle - self.angle),
-                math.cos(food_angle - self.angle)
+    def __init__(self, x, y, genes=None, inherited_expression=None, inherited_genes=None):
+        self.x = x
+        self.y = y
+        self.angle = random.uniform(0, math.tau)
+        self.angular_velocity = random.uniform(-0.1, 0.1)
+        self.time = 0.0
+        self.wave_phase = random.random() * 6.28
+        self.wave_freq = 1.8
+        self.wave_amp = 0.35
+        self.segment_count = 18
+        self.segment_length = 6
+        self.wave_speed = random.uniform(2.0, 4.0)
+        self.wave_amplitude = random.uniform(4.0, 6.0)
+        self.phase = random.random() * 6.28
+        self.forward_signal = 0.0
+        self.turn_signal = 0.0
+        self.direction_x = math.cos(self.angle)
+        self.direction_y = math.sin(self.angle)
+        self.direction = 1
+        self.vx = 0.0
+        self.vy = 0.0
+        self.speed = 40.0
+        self.syn_left = 0.5
+        self.syn_right = 0.5
+        self.size = 0.3
+        self.behavior = "roam"
+        self.stage = "juvenile"
+        self.locomotion_mode = "crawl"
+        self.prev_food_signal = 0.0
+        self.food_adaptation = 0.0
+        self.repro_timer = 0.0
+        self.generation = 0
+        self.state = "RUN"
+        self.run_timer = 0.0
+        self.dauer = False
+        self.environment_mutation_rate = float(MUTATION_RATE)
+        self.neurons = {
+            "ASE": 0.0,
+            "AWC": 0.0,
+            "AIY": 0.0,
+            "AIZ": 0.0,
+            "AVB": 0.0,
+            "AVA": 0.0,
+        }
+        if inherited_genes is None:
+            inherited_genes = {}
+        self.inherited_genes = dict(inherited_genes)
+        self.generation = int(inherited_genes.get("generation", 0))
+        self.lineage_id = int(inherited_genes.get("lineage_id", random.randint(0, 1000000)))
+        inherited_sex = inherited_genes.get("sex")
+        if inherited_sex in ("male", "hermaphrodite"):
+            self.sex = inherited_sex
+        else:
+            self.sex = "male" if random.random() < MALE_RATIO else "hermaphrodite"
+        self._refresh_visual_color()
+        base_gene_speed = float(
+            inherited_genes.get("gene_speed", inherited_genes.get("speed", random.uniform(0.8, 1.2)))
+        )
+        base_gene_food_sense = float(
+            inherited_genes.get(
+                "gene_food_sense",
+                inherited_genes.get("food_sense", inherited_genes.get("gene_food_weight", random.uniform(0.8, 1.2))),
             )
-            self.angle += delta * 0.03
-        # ...existing code...
+        )
 
     def __init__(self, x, y, genes=None, inherited_expression=None, inherited_genes=None):
 
@@ -1062,8 +1083,8 @@ class Worm:
 
 
         # --- Reproduction only if energy and age thresholds are met ---
-        reproduction_threshold = 800
-        maturity_age = 30
+        reproduction_threshold = self.gene_reproduction_energy
+        maturity_age = 40
         if (not self.dauer) and self.stage == "adult" and self.repro_timer <= 0:
             if self.sex == "hermaphrodite":
                 if self.energy > reproduction_threshold and self.age > maturity_age:
