@@ -411,7 +411,7 @@ def spawn_initial_population(count=INITIAL_WORMS):
     worms.clear()
     eggs.clear()
     for _ in range(max(1, int(count))):
-        worms.append(spawn_worm_near_food())
+        worms.append(spawn_worm_near_food_patch())
 
 def switch_to_ecosystem():
     spawn_initial_population(INITIAL_WORMS)
@@ -524,13 +524,31 @@ def build_tapered_mesh(points, base_width):
 
     return np.array(mesh, dtype="f4") if mesh else np.empty((0, 2), dtype="f4")
 
+def spawn_worm_near_food_patch():
+    # Find a food-rich patch in the world
+    food_threshold = 0.5  # Adjust as needed
+    candidates = []
+    for x in range(world.food.shape[0]):
+        for y in range(world.food.shape[1]):
+            if world.food[x, y] > food_threshold:
+                candidates.append((x, y))
+    if candidates:
+        fx, fy = random.choice(candidates)
+        # Convert grid coordinates to world coordinates
+        wx = (fx + 0.5) * (WORLD_SIZE / world.food.shape[0])
+        wy = (fy + 0.5) * (WORLD_SIZE / world.food.shape[1])
+    else:
+        # Fallback: random location
+        wx = random.uniform(0, WORLD_SIZE)
+        wy = random.uniform(0, WORLD_SIZE)
+    return Worm(wx, wy, inherited_genes={"generation": 0})
+
 def spawn_worm_near_food():
     spawn_center_x = float(getattr(world, "food_center_x", WORLD_SIZE * 0.5))
     spawn_center_y = float(getattr(world, "food_center_y", WORLD_SIZE * 0.5))
-    x = spawn_center_x + random.uniform(-20.0, 20.0)
-    y = spawn_center_y + random.uniform(-20.0, 20.0)
-    x = max(0.0, min(x, WORLD_SIZE - 1.0))
-    y = max(0.0, min(y, WORLD_SIZE - 1.0))
+    def spawn_worm_random():
+        x = random.uniform(0, WORLD_SIZE)
+        y = random.uniform(0, WORLD_SIZE)
     return Worm(x, y, inherited_genes={"generation": 0})
 
 def toggle_fullscreen_state(current_fullscreen):
