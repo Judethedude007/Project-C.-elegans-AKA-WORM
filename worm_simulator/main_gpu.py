@@ -6,6 +6,7 @@ import subprocess
 import sys
 import numpy as np
 import pygame
+import stats
 
 try:
     import imgui
@@ -684,6 +685,7 @@ while running:
     births = 0
     deaths = 0
 
+
     while accumulator >= FIXED_DT:
         active_chunks = world.get_active_chunks_near_worms(worms, radius_chunks=2)
         world.update(FIXED_DT, active_chunks=active_chunks)
@@ -740,6 +742,9 @@ while running:
 
         sim_time += FIXED_DT
         accumulator -= FIXED_DT
+
+        # Record stats each frame
+        stats.record_stats(worms, eggs, sim_time)
 
     instant_births = births / max(frame_time, 1e-6)
     instant_deaths = deaths / max(frame_time, 1e-6)
@@ -1203,3 +1208,7 @@ if imgui_renderer:
     imgui_renderer.shutdown()
 evolution_logger.close()
 pygame.quit()
+
+# Plot stats graphs after simulation ends
+stats.plot_population()
+stats.plot_gene_evolution()
