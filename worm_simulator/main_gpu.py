@@ -66,7 +66,7 @@ LOG_INTERVAL_SECONDS = 2.0
 RUNS_DIR_NAME = "runs"
 UI_STATS_LINE_HEIGHT = 18
 UI_HELP_LINE_HEIGHT = 17
-UI_PANEL_BOTTOM_PADDING = 40
+UI_PANEL_BOTTOM_PADDING = 120
 UI_STATS_COUNT = 32
 UI_HELP_COUNT = 10
 BACKGROUND_STAR_COUNT = 200
@@ -179,6 +179,22 @@ class UIButton:
     def hit(self, local_pos):
         return self.rect.collidepoint(local_pos)
 
+# --- Scroll Bar Drawing Function ---
+def draw_scroll_bar(surface, scroll_offset, max_scroll, panel_height, x, y, width, height):
+    if max_scroll <= 0:
+        return None  # No need for a scroll bar
+    # Scroll bar background
+    bar_rect = pygame.Rect(x, y, width, height)
+    pygame.draw.rect(surface, (60, 60, 60), bar_rect, border_radius=6)
+    # Scroll thumb size and position
+    visible_ratio = panel_height / (panel_height + max_scroll)
+    thumb_height = max(30, int(height * visible_ratio))
+    scroll_ratio = -scroll_offset / max_scroll if max_scroll > 0 else 0
+    thumb_y = y + int((height - thumb_height) * scroll_ratio)
+    thumb_rect = pygame.Rect(x, thumb_y, width, thumb_height)
+    pygame.draw.rect(surface, (180, 180, 180), thumb_rect, border_radius=6)
+    return thumb_rect
+
 def create_render_surfaces(view_width, view_height):
     world_surf = pygame.Surface((max(1, view_width), max(1, view_height)), flags=pygame.SRCALPHA)
     ui_surf = pygame.Surface((UI_WIDTH, max(1, view_height)), flags=pygame.SRCALPHA)
@@ -256,7 +272,7 @@ def update_ui_layout(scroll_offset):
     else:
         stats_height = 24 + UI_STATS_COUNT * UI_STATS_LINE_HEIGHT
         help_height = 4 + UI_HELP_COUNT * UI_HELP_LINE_HEIGHT
-        content_bottom = stats_y + stats_height + help_height + UI_PANEL_BOTTOM_PADDING
+        content_bottom = stats_y + stats_height + help_height + UI_PANEL_BOTTOM_PADDING + 40  # Extra scrollable space
 
     return {
         "stats_y": stats_y,
@@ -333,6 +349,9 @@ total_deaths = 0
 max_generation = 0
 view_mode = 0
 debug_log_timer = 0.0
+
+scroll_dragging = False
+scroll_drag_offset = 0
 
 def spawn_initial_population(count=INITIAL_WORMS):
     worms.clear()
@@ -488,9 +507,12 @@ if worms:
 
 while running:
 
+    # Always recalculate layout and scroll region at the start of each frame
     ui_layout = update_ui_layout(ui_scroll)
     panel_height = screen_height - 20
-    max_scroll = max(0, int(ui_layout["content_bottom"] - panel_height))
+    # FIX: Subtract the current scroll offset to get the true absolute height
+    absolute_content_bottom = ui_layout["content_bottom"] - ui_scroll
+    max_scroll = max(0, int(absolute_content_bottom - panel_height))
     ui_scroll = max(-max_scroll, min(0, ui_scroll))
     if ui_scroll != ui_layout["scroll_offset"]:
         ui_layout = update_ui_layout(ui_scroll)
@@ -599,15 +621,38 @@ while running:
                     apply_world_controls(world, control_sliders)
 
         if event.type == pygame.MOUSEWHEEL:
-            mouse_x, _ = pygame.mouse.get_pos()
-            if show_ui and mouse_x >= world_view_width:
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            if mouse_x > world_view_width:  # Only scroll if mouse is over UI panel
                 ui_scroll += event.y * UI_SCROLL_SPEED
-                panel_height = screen_height - 20
-                max_scroll = max(0, int(ui_layout["content_bottom"] - panel_height))
                 ui_scroll = max(-max_scroll, min(0, ui_scroll))
             elif mouse_x < world_view_width:
                 zoom += event.y * 0.1
                 zoom = max(ZOOM_MIN, min(zoom, ZOOM_MAX))
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            if mouse_x > world_view_width:
+                local_x = mouse_x - world_view_width
+                local_y = mouse_y
+                # Check if click is on scroll bar thumb
+                if 'scroll_thumb_rect' in locals() and scroll_thumb_rect and scroll_thumb_rect.collidepoint(local_x, local_y):
+                    scroll_dragging = True
+                    scroll_drag_offset = local_y - scroll_thumb_rect.y
+
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            scroll_dragging = False
+
+        if event.type == pygame.MOUSEMOTION and scroll_dragging:
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            if mouse_x > world_view_width:
+                local_y = mouse_y
+                # Calculate new scroll offset based on thumb drag
+                thumb_track_height = panel_height - (scroll_thumb_rect.height if 'scroll_thumb_rect' in locals() and scroll_thumb_rect else 0)
+                if thumb_track_height > 0 and 'scroll_thumb_rect' in locals() and scroll_thumb_rect:
+                    thumb_y = local_y - scroll_drag_offset
+                    thumb_y = max(0, min(thumb_y, thumb_track_height))
+                    scroll_ratio = thumb_y / thumb_track_height
+                    ui_scroll = -int(scroll_ratio * max_scroll)
 
     simulation_speed = control_sliders["sim_speed"].value
     apply_world_controls(world, control_sliders)
@@ -1101,6 +1146,14 @@ while running:
             ui_surface.blit(btn_text, (open_output_folder_button_rect.x + 10, open_output_folder_button_rect.y + 4))
             y += 36
 
+            # TEMP: Handle debug 'Scroll to Bottom' button click
+            debug_scroll_to_bottom_button_rect = pygame.Rect(20, y, 200, 28)
+            pygame.draw.rect(ui_surface, (120, 60, 60), debug_scroll_to_bottom_button_rect, border_radius=6)
+            pygame.draw.rect(ui_surface, (255, 180, 180), debug_scroll_to_bottom_button_rect, width=2, border_radius=6)
+            btn_text = small_font.render("Scroll to Bottom (Debug)", True, (255, 255, 255))
+            ui_surface.blit(btn_text, (debug_scroll_to_bottom_button_rect.x + 10, debug_scroll_to_bottom_button_rect.y + 4))
+            y += 36
+
             camera_mode_name = "Free camera" if camera_mode == CAMERA_MODE_FREE else "Follow dominant lineage"
             y += 4
             for line in (
@@ -1120,6 +1173,17 @@ while running:
 
         screen.blit(ui_surface, (world_view_width, 0))
         pygame.draw.line(screen, (80, 80, 80), (world_view_width, 0), (world_view_width, screen_height), 2)
+        # Draw the scroll bar on the UI panel
+        scroll_thumb_rect = draw_scroll_bar(
+            ui_surface,
+            ui_scroll,
+            max_scroll,
+            panel_height,
+            UI_WIDTH - 16,  # x position (right edge of UI panel)
+            0,              # y position (top of UI panel)
+            12,             # width of scroll bar
+            panel_height    # height of scroll bar
+        )
 
     pygame.display.set_caption(
         f"Target:{simulation_mode} Worms:{len(worms)} Food:{total_food:.0f} Lineages:{total_lineages} "
