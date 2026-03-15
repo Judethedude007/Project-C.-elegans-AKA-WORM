@@ -8,6 +8,9 @@ import numpy as np
 import pygame
 import stats
 
+# Evolution Dashboard toggle (must be global)
+show_dashboard = False
+
 try:
     import imgui
     from imgui.integrations.pygame import PygameRenderer
@@ -581,7 +584,6 @@ while running:
                 zoom /= 1.1
 
             zoom = max(ZOOM_MIN, min(zoom, ZOOM_MAX))
-
             if event.key == pygame.K_f:
                 fullscreen, screen, screen_width, screen_height, world_view_width = toggle_fullscreen_state(fullscreen)
                 if renderer is not None:
@@ -593,6 +595,9 @@ while running:
                     camera_mode = CAMERA_MODE_DOMINANT
                 else:
                     camera_mode = CAMERA_MODE_FREE
+            # Toggle Evolution Dashboard overlay with TAB
+            if event.key == pygame.K_TAB:
+                show_dashboard = not show_dashboard
 
         if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
             if event.type == pygame.MOUSEMOTION:
@@ -1026,6 +1031,26 @@ while running:
                 pygame.draw.circle(world_surface, (255, 90, 90), (int(sx), int(sy)), 2)
 
     screen.blit(world_surface, (0, 0))
+
+    # Draw Evolution Dashboard overlay if enabled
+    if show_dashboard:
+        avg_speed = np.mean([w.gene_speed for w in worms]) if worms else 0
+        avg_food = np.mean([w.gene_food_sense for w in worms]) if worms else 0
+        dashboard_text = (
+            f"Worms: {len(worms)}\n"
+            f"Eggs: {len(eggs)}\n"
+            f"Avg Speed Gene: {avg_speed:.2f}\n"
+            f"Avg Food Sense: {avg_food:.2f}\n"
+            f"Mutation Rate: {world.mutation_rate:.3f}\n"
+            f"Climate: {'ON' if world.climate_enabled else 'OFF'}"
+        )
+        overlay_rect = pygame.Rect(40, 40, 260, 140)
+        pygame.draw.rect(screen, (30, 30, 50, 220), overlay_rect, border_radius=12)
+        pygame.draw.rect(screen, (120, 180, 255), overlay_rect, width=2, border_radius=12)
+        lines = dashboard_text.split("\n")
+        for i, line in enumerate(lines):
+            text_surf = font.render(line, True, (230, 255, 255))
+            screen.blit(text_surf, (overlay_rect.x + 16, overlay_rect.y + 12 + i * 26))
 
     avg_energy = (sum(w.energy for w in worms) / len(worms)) if worms else 0.0
     worm_count = len(worms)
