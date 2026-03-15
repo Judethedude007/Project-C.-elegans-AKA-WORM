@@ -1,7 +1,7 @@
 import math
 import random
 from brain import Brain
-from config import WORLD_SIZE, REPRODUCTION_ENERGY, ENERGY_DECAY, MUTATION_RATE
+from config import WORLD_SIZE, REPRODUCTION_ENERGY, ENERGY_DECAY, MUTATION_RATE, FOOD_ATTRACTION_WEIGHT, PHEROMONE_DEPOSIT
 from world import GRID_SIZE
 
 METABOLISM = 0.3
@@ -561,6 +561,7 @@ class Worm:
 
         food_turn = ((left_food - right_food) / adaptation_scale) * 0.05
         food_turn *= self.gene_food_sense
+        food_turn *= FOOD_ATTRACTION_WEIGHT
 
         pher_left = world.get_pheromone(*left_sensor_pos)
         pher_right = world.get_pheromone(*right_sensor_pos)
@@ -930,7 +931,7 @@ class Worm:
                 self.vel[i] = (0.0, 0.0)
 
         if 0 <= gx < GRID_SIZE and 0 <= gy < GRID_SIZE:
-            world.pheromone[gx, gy] += 0.05
+            world.pheromone[gx, gy] += PHEROMONE_DEPOSIT * 0.05
 
         if (not self.dauer) and self.stage == "adult" and self.repro_timer <= 0:
             if self.sex == "hermaphrodite":

@@ -184,7 +184,8 @@ class World:
         user_growth = self.food_growth_rate * seasonal_growth
 
         # Food patch spreading creates organic cluster growth rather than static fields.
-        food_candidate = self.food + user_growth * time_scale + logistic_growth * time_scale + 0.02 * seasonal_growth * (
+        # Food diffusion: existing patches spread organically to neighbouring cells.
+        food_candidate = self.food + user_growth * time_scale + logistic_growth * time_scale + 0.15 * seasonal_growth * (
             np.roll(self.food, 1, axis=0)
             + np.roll(self.food, -1, axis=0)
             + np.roll(self.food, 1, axis=1)

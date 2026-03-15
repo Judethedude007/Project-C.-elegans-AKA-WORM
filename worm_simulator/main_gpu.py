@@ -481,7 +481,8 @@ if worms:
 while running:
 
     ui_layout = update_ui_layout(ui_scroll)
-    max_scroll = max(0, int(ui_layout["content_bottom"] - screen_height + UI_PANEL_BOTTOM_PADDING))
+    panel_height = screen_height - 20
+    max_scroll = max(0, int(ui_layout["content_bottom"] - panel_height))
     ui_scroll = max(-max_scroll, min(0, ui_scroll))
     if ui_scroll != ui_layout["scroll_offset"]:
         ui_layout = update_ui_layout(ui_scroll)
@@ -589,7 +590,8 @@ while running:
             mouse_x, _ = pygame.mouse.get_pos()
             if show_ui and mouse_x >= world_view_width:
                 ui_scroll += event.y * UI_SCROLL_SPEED
-                max_scroll = max(0, int(ui_layout["content_bottom"] - screen_height + UI_PANEL_BOTTOM_PADDING))
+                panel_height = screen_height - 20
+                max_scroll = max(0, int(ui_layout["content_bottom"] - panel_height))
                 ui_scroll = max(-max_scroll, min(0, ui_scroll))
             elif mouse_x < world_view_width:
                 zoom += event.y * 0.1
@@ -916,6 +918,7 @@ while running:
                 u = i / float(max(1, visible_segments - 1))
                 radius = max(1, int((6.0 * (1.0 - u) + 1.0) * max(0.7, min(1.6, zoom))))
                 color = head_color if i == 0 else base_color
+                pygame.draw.circle(world_surface, (0, 0, 0), (int(sx), int(sy)), radius + 2)
                 pygame.draw.circle(world_surface, color, (int(sx), int(sy)), radius)
 
         for egg in eggs:
