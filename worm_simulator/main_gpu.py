@@ -167,27 +167,40 @@ class Slider:
         surface.blit(text, (self.rect.x, self.rect.y - 20))
 
 class UIButton:
-# --- UIButton class body ---
-    def __init__(self, x, y, width, height, label):
+    def __init__(self, x, y, width, height, label, bg=(68, 68, 68)):
         self.rect = pygame.Rect(x, y, width, height)
         self.label = label
-
+        self.bg = bg  # background color (tuple)
+    def configure(self, text=None, bg=None):
+        if text is not None:
+            self.label = text
+        if bg is not None:
+            self.bg = bg
     def draw(self, surface, text_font, selected=False):
-        bg = (75, 95, 135) if selected else (58, 58, 68)
+        bg = self.bg
         border = (180, 195, 225) if selected else (100, 100, 115)
         pygame.draw.rect(surface, bg, self.rect, border_radius=6)
         pygame.draw.rect(surface, border, self.rect, width=1, border_radius=6)
         text = text_font.render(self.label, True, (235, 235, 235))
         surface.blit(text, (self.rect.x + 8, self.rect.y + 6))
-
     def hit(self, local_pos):
         return self.rect.collidepoint(local_pos)
 
 # --- Climate Toggle Button (must be after UIButton class is fully defined) ---
 def toggle_climate():
     world.climate_enabled = not world.climate_enabled
+    if world.climate_enabled:
+        climate_button.configure(
+            text="Climate ON",
+            bg=(59, 130, 246)  # blue
+        )
+    else:
+        climate_button.configure(
+            text="Enable Climate",
+            bg=(68, 68, 68)  # gray
+        )
+climate_button = UIButton(20, 0, 250, 30, "Enable Climate", bg=(68, 68, 68))
 
-climate_button = UIButton(20, 0, 250, 30, "Enable Climate")
 # --- Scroll Bar Drawing Function ---
 def draw_scroll_bar(surface, scroll_offset, max_scroll, panel_height, x, y, width, height):
     if max_scroll <= 0:
@@ -296,6 +309,7 @@ def update_ui_layout(scroll_offset):
     }
 
 world = World()
+toggle_climate()
 worms = []
 eggs = []
 simulation_mode = MODE_ECOSYSTEM
@@ -1201,6 +1215,7 @@ while running:
                 "F: Fullscreen, C: Camera",
                 "WASD/Arrows: Pan",
                 "Z/X: Zoom",
+                "TAB: Evolution Dashboard",
                 "Mouse wheel on panel: scroll",
                 "Mouse wheel on world: zoom",
                 f"Camera: {camera_mode_name}",
