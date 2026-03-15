@@ -617,7 +617,11 @@ class Worm:
         turn = food_turn + pheromone_turn + reverse_drive * 0.25
         pheromone_signal_here = self.neurons["AWC"]
 
-        if (not self.dauer) and self.energy < 20.0 and food_here < 0.03:
+        population = len(getattr(world, "worm_positions", []))
+        if (not self.dauer) and (
+            (self.energy < 20.0 and food_here < 0.03)
+            or (food_here < 0.1 and population > 50)
+        ):
             self.dauer = True
             self.stage = "dauer"
             self.size = min(self.size, 0.35)
@@ -741,7 +745,7 @@ class Worm:
         target_speed = 0.0
 
         if self.state == "RUN":
-            speed = BASE_SPEED * forward_drive
+            speed = BASE_SPEED * max(0.05, forward_drive)
             target_speed = speed
             target_speed *= (0.7 + serotonin * 0.6)
             target_speed *= self.gene_speed

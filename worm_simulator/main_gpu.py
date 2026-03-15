@@ -195,7 +195,7 @@ def update_ui_layout(scroll_offset):
     ui_y += UI_BUTTON_STEP
 
     section_buttons["environment"].rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 26)
-    ui_y += 34
+    ui_y += UI_BUTTON_STEP
 
     if not section_collapsed["environment"]:
         for slider_key in ENVIRONMENT_SLIDERS:
@@ -205,7 +205,7 @@ def update_ui_layout(scroll_offset):
         ui_y += UI_SECTION_GAP
 
     section_buttons["evolution"].rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 26)
-    ui_y += 34
+    ui_y += UI_BUTTON_STEP
 
     if not section_collapsed["evolution"]:
         for slider_key in EVOLUTION_SLIDERS:
@@ -215,7 +215,7 @@ def update_ui_layout(scroll_offset):
         ui_y += UI_SECTION_GAP
 
     section_buttons["simulation"].rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 26)
-    ui_y += 34
+    ui_y += UI_BUTTON_STEP
 
     if not section_collapsed["simulation"]:
         for slider_key in SIMULATION_SLIDERS:
@@ -228,7 +228,7 @@ def update_ui_layout(scroll_offset):
         ui_y += UI_SECTION_GAP
 
     section_buttons["stats"].rect.update(UI_MARGIN_X, ui_y, UI_SLIDER_WIDTH, 26)
-    ui_y += 34
+    ui_y += UI_BUTTON_STEP
 
     stats_y = ui_y
 
@@ -910,6 +910,13 @@ while running:
                 head_color = (255, 200, 200)
 
             visible_segments = max(2, min(len(segment_points), int(round(len(segment_points) * max(0.25, worm.size)))))
+            screen_points = []
+            for px, py in segment_points[:visible_segments]:
+                sx, sy = world_to_screen(px, py, camera_x, camera_y, zoom, world_view_width, screen_height)
+                screen_points.append((int(sx), int(sy)))
+
+            for i in range(1, len(screen_points)):
+                pygame.draw.line(world_surface, base_color, screen_points[i - 1], screen_points[i], 4)
 
             for i, (px, py) in enumerate(segment_points[:visible_segments]):
                 sx, sy = world_to_screen(px, py, camera_x, camera_y, zoom, world_view_width, screen_height)
