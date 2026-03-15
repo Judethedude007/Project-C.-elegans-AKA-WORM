@@ -4,3 +4,5 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+worm_simulator/runs/*.csv
+worm_simulator/runs/*.png

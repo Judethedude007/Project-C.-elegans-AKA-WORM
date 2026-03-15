@@ -31,6 +31,7 @@ from config import (
     SEASON_SPEED,
 )
 from gpu_renderer import GPURenderer
+from evolution_logger import EvolutionLogger
 
 ZOOM_MIN = 1.0
 ZOOM_MAX = 20.0
@@ -58,6 +59,8 @@ UI_SLIDER_WIDTH = 250
 UI_SLIDER_STEP = 60
 UI_SECTION_GAP = 28
 UI_SCROLL_SPEED = 30
+LOG_INTERVAL_SECONDS = 2.0
+RUNS_DIR_NAME = "runs"
 
 pygame.init()
 display_flags = pygame.DOUBLEBUF | pygame.HWSURFACE
@@ -171,13 +174,16 @@ def update_ui_layout(scroll_offset):
         slider.rect.update(UI_MARGIN_X, y, UI_SLIDER_WIDTH, 20)
         y += UI_SLIDER_STEP
 
-    y += 50
+    y += 18
+    export_graph_button.rect.update(UI_MARGIN_X, y, UI_SLIDER_WIDTH, 30)
+    y += 48
+
     return {
         "stats_y": y,
         "mode_title_y": 12 + scroll_offset,
         "env_title_y": 88 + scroll_offset,
         "sim_title_y": control_sliders["sim_speed"].rect.y - 22,
-        "content_bottom": y + 240,
+        "content_bottom": y + 420,
     }
 
 
@@ -188,11 +194,15 @@ simulation_mode = MODE_ECOSYSTEM
 ui_scroll = 0
 ui_scroll_min = 0
 openworm_status = "OpenWorm not launched"
+graph_status = "Graph export not started"
+sim_time = 0.0
+next_log_time = 0.0
 
 mode_buttons = {
     MODE_ECOSYSTEM: UIButton(20, 52, 130, 30, "Ecosystem"),
     MODE_OPENWORM: UIButton(160, 52, 130, 30, "OpenWorm"),
 }
+export_graph_button = UIButton(20, 0, 250, 30, "Export Graph")
 
 control_sliders = {
     "temperature": Slider(20, 80, 250, 0.5, 2.0, TEMPERATURE, "Temperature"),
@@ -204,6 +214,10 @@ control_sliders = {
     "sim_speed": Slider(20, 440, 250, 0.25, 8.0, 1.0, "Sim Speed"),
 }
 apply_world_controls(world, control_sliders)
+
+runs_dir = os.path.join(os.path.dirname(__file__), RUNS_DIR_NAME)
+evolution_logger = EvolutionLogger(runs_dir, flush_every=1)
+graph_status = f"Logging to {os.path.basename(evolution_logger.csv_path)}"
 
 renderer = GPURenderer(SCREEN_WIDTH, SCREEN_HEIGHT) if USE_OPENGL_WORLD else None
 if renderer is not None:
@@ -256,6 +270,20 @@ def launch_openworm():
         return True, "OpenWorm launched in a separate process"
     except Exception as exc:
         return False, f"OpenWorm launch failed: {exc}"
+
+
+def launch_graph_export(csv_path):
+    plot_script = os.path.join(os.path.dirname(__file__), "plot_evolution.py")
+    if not os.path.exists(plot_script):
+        return False, f"Plot script missing: {plot_script}"
+    if not csv_path or not os.path.exists(csv_path):
+        return False, "No evolution CSV available to plot"
+
+    try:
+        subprocess.Popen([sys.executable, plot_script, csv_path], cwd=os.path.dirname(plot_script))
+        return True, f"Opened graph for {os.path.basename(csv_path)}"
+    except Exception as exc:
+        return False, f"Graph export failed: {exc}"
 
 
 def split_by_gap(points, max_gap):
@@ -442,6 +470,8 @@ while running:
                     elif mode_buttons[MODE_OPENWORM].hit(local_pos):
                         simulation_mode = MODE_OPENWORM
                         launched, openworm_status = launch_openworm()
+                    elif export_graph_button.hit(local_pos):
+                        launched, graph_status = launch_graph_export(evolution_logger.csv_path)
 
                 slider_changed = False
                 for slider in control_sliders.values():
@@ -535,6 +565,7 @@ while running:
         if eggs:
             max_generation = max(max_generation, max(getattr(e, "generation", 0) for e in eggs))
 
+        sim_time += FIXED_DT
         accumulator -= FIXED_DT
 
     instant_births = births / max(frame_time, 1e-6)
@@ -805,6 +836,27 @@ while running:
     dominant_lineage = max(lineage_counts, key=lineage_counts.get) if lineage_counts else -1
     largest_colony = max(lineage_counts.values()) if lineage_counts else 0
 
+    if sim_time >= next_log_time:
+        evolution_logger.log(
+            sim_time=round(sim_time, 3),
+            worms=len(worms),
+            avg_energy=round(avg_energy, 3),
+            total_births=total_births,
+            total_deaths=total_deaths,
+            lineages=total_lineages,
+            largest_colony=largest_colony,
+            dominant_lineage=dominant_lineage,
+            food_total=round(total_food, 6),
+            food_density=round(food_density, 6),
+            pheromone_density=round(pheromone_density, 6),
+            season=world.season_name,
+            temperature=round(float(getattr(world, "temperature", control_sliders["temperature"].value)), 3),
+            water_level=round(float(getattr(world, "water_level", control_sliders["water"].value)), 3),
+            oxygen_level=round(float(getattr(world, "oxygen_level", control_sliders["oxygen"].value)), 3),
+        )
+        while next_log_time <= sim_time:
+            next_log_time += LOG_INTERVAL_SECONDS
+
     if show_ui:
         ui_surface.fill((25, 25, 30))
         ui_surface.blit(font.render("Simulation Mode", True, (235, 235, 235)), (20, ui_layout["mode_title_y"]))
@@ -815,9 +867,11 @@ while running:
         for slider_key in ("temperature", "water", "oxygen", "food_growth", "mutation", "season_speed", "sim_speed"):
             control_sliders[slider_key].draw(ui_surface, font, small_font)
         ui_surface.blit(small_font.render("Simulation Controls", True, (190, 210, 255)), (20, ui_layout["sim_title_y"]))
+        export_graph_button.draw(ui_surface, small_font)
 
         stats = [
             f"Target: {simulation_mode}",
+            f"Sim Time: {sim_time:.1f}s",
             f"Worms: {len(worms)}",
             f"Avg Energy: {avg_energy:.1f}",
             f"Births: {total_births}",
@@ -831,6 +885,8 @@ while running:
             f"Deaths/s: {deaths_per_sec:.2f}",
             f"Dominant lineage: {dominant_lineage}",
             f"OpenWorm: {openworm_status}",
+            f"CSV: {os.path.basename(evolution_logger.csv_path)}",
+            f"Graph: {graph_status}",
         ]
 
         y = ui_layout["stats_y"]
@@ -846,6 +902,7 @@ while running:
             "I: Toggle UI",
             "1: Ecosystem simulator",
             "2: Launch OpenWorm",
+            "Export Graph button: plot latest run",
             "F: Fullscreen, C: Camera",
             "WASD/Arrows: Pan",
             "Z/X: Zoom",
@@ -868,4 +925,5 @@ while running:
 
 if imgui_renderer:
     imgui_renderer.shutdown()
+evolution_logger.close()
 pygame.quit()
