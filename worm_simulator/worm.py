@@ -1,7 +1,7 @@
 import math
 import random
 from brain import Brain
-from config import WORLD_SIZE
+from config import WORLD_SIZE, REPRODUCTION_ENERGY, ENERGY_DECAY
 from world import GRID_SIZE
 
 METABOLISM = 0.3
@@ -27,6 +27,7 @@ VELOCITY_DAMPING = 0.92
 MALE_RATIO = 0.05
 MATING_RANGE = 5.0
 MALE_COLOR = (80.0 / 255.0, 120.0 / 255.0, 255.0 / 255.0)
+MAX_ENERGY_FOR_STRESS = 200.0
 
 
 def sample_chem(env, x, y):
@@ -157,14 +158,24 @@ class Worm:
         base_gene_reproduction_energy = float(
             inherited_genes.get(
                 "gene_reproduction_energy",
-                inherited_genes.get("reproduction_energy", random.uniform(150.0, 220.0)),
+                inherited_genes.get("reproduction_energy", float(REPRODUCTION_ENERGY)),
             )
         )
+        inherited_metabolism = inherited_genes.get("gene_metabolism")
+        if inherited_metabolism is None:
+            raw_metabolism = inherited_genes.get("metabolism")
+            if raw_metabolism is None:
+                inherited_metabolism = 1.0
+            else:
+                raw_metabolism = float(raw_metabolism)
+                inherited_metabolism = raw_metabolism / 0.01 if raw_metabolism < 0.2 else raw_metabolism
+        base_gene_metabolism = float(inherited_metabolism)
 
         self.gene_speed = max(0.6, min(1.4, base_gene_speed))
         self.gene_food_sense = max(0.6, min(1.4, base_gene_food_sense))
         self.gene_phero_sense = max(0.6, min(1.4, base_gene_phero_sense))
         self.gene_reproduction_energy = max(120.0, min(280.0, base_gene_reproduction_energy))
+        self.gene_metabolism = max(0.6, min(1.4, base_gene_metabolism))
 
         self.genome = {
             "speed": self.gene_speed,
@@ -198,14 +209,18 @@ class Worm:
                 "speed": 1.0,
                 "sensor_range": float(SENSOR_DISTANCE),
                 "turn_sensitivity": 0.25,
-                "metabolism": 0.01,
+                "metabolism": 0.01 * self.gene_metabolism,
             }
+
+        metabolism_value = float(genes.get("metabolism", 0.01 * self.gene_metabolism))
+        if metabolism_value > 0.2:
+            metabolism_value *= 0.01
 
         self.genes = {
             "speed": float(genes.get("speed", 1.0)),
             "sensor_range": float(genes.get("sensor_range", SENSOR_DISTANCE)),
             "turn_sensitivity": float(genes.get("turn_sensitivity", 0.25)),
-            "metabolism": float(genes.get("metabolism", 0.01)),
+            "metabolism": metabolism_value,
         }
 
         self.energy = 100
@@ -269,34 +284,53 @@ class Worm:
         if random.random() < 0.02:
             child_lineage_id = random.randint(0, 1000000)
 
-        child_gene_speed = max(0.6, min(1.4, self.gene_speed * random.uniform(0.95, 1.05)))
-        child_gene_food_sense = max(0.6, min(1.4, self.gene_food_sense * random.uniform(0.95, 1.05)))
-        child_gene_phero_sense = max(0.6, min(1.4, self.gene_phero_sense * random.uniform(0.95, 1.05)))
-        child_gene_reproduction_energy = max(
-            120.0,
-            min(280.0, self.gene_reproduction_energy * random.uniform(0.95, 1.05)),
-        )
+        mutation_rate = self._adaptive_mutation_rate()
+        child_gene_speed = self._mutate_gene(self.gene_speed, 0.6, 1.4, mutation_rate)
+        child_gene_food_sense = self._mutate_gene(self.gene_food_sense, 0.6, 1.4, mutation_rate)
+        child_gene_phero_sense = self._mutate_gene(self.gene_phero_sense, 0.6, 1.4, mutation_rate)
+        child_gene_reproduction_energy = self._mutate_gene(self.gene_reproduction_energy, 120.0, 280.0, mutation_rate)
+        child_turn_bias = self._mutate_gene(self.genome["turn_bias"], 0.75, 1.25, mutation_rate)
+        child_efficiency = self._mutate_gene(self.genome["energy_efficiency"], 0.75, 1.25, mutation_rate)
+        child_gene_metabolism = self._mutate_gene(self.gene_metabolism, 0.6, 1.4, mutation_rate)
 
         child_genes = {
             "gene_speed": child_gene_speed,
             "gene_food_sense": child_gene_food_sense,
             "gene_phero_sense": child_gene_phero_sense,
             "gene_reproduction_energy": child_gene_reproduction_energy,
+            "gene_metabolism": child_gene_metabolism,
             "speed": child_gene_speed,
             "food_sense": child_gene_food_sense,
             "pheromone_sense": child_gene_phero_sense,
             "reproduction_energy": child_gene_reproduction_energy,
-            "turn_bias": self.genome["turn_bias"],
-            "energy_efficiency": self.genome["energy_efficiency"],
+            "metabolism": 0.01 * child_gene_metabolism,
+            "turn_bias": child_turn_bias,
+            "energy_efficiency": child_efficiency,
             "lineage_id": child_lineage_id,
             "generation": self.generation + 1,
             "sex": "male" if random.random() < MALE_RATIO else "hermaphrodite",
         }
         return child_genes
 
+    def _adaptive_mutation_rate(self, partner=None):
+        own_stress = 1.0 - (self.energy / MAX_ENERGY_FOR_STRESS)
+        own_stress = max(0.0, min(1.0, own_stress))
+
+        stress = own_stress
+        if partner is not None:
+            partner_stress = 1.0 - (getattr(partner, "energy", 0.0) / MAX_ENERGY_FOR_STRESS)
+            partner_stress = max(0.0, min(1.0, partner_stress))
+            stress = 0.5 * (own_stress + partner_stress)
+
+        base_rate = 0.02
+        return max(base_rate, min(0.25, base_rate + stress * 0.1))
+
     @staticmethod
-    def _mutate_gene(value, low, high):
-        return max(low, min(high, value * random.uniform(0.95, 1.05)))
+    def _mutate_gene(value, low, high, mutation_rate):
+        mutated = value
+        if random.random() < mutation_rate:
+            mutated *= random.uniform(0.9, 1.1)
+        return max(low, min(high, mutated))
 
     def _build_mated_child_genes(self, mate):
         child_lineage_id = self.lineage_id
@@ -305,23 +339,43 @@ class Worm:
         if random.random() < 0.05:
             child_lineage_id = random.randint(0, 1000000)
 
-        child_gene_speed = self._mutate_gene((self.gene_speed + mate.gene_speed) * 0.5, 0.6, 1.4)
-        child_gene_food_sense = self._mutate_gene((self.gene_food_sense + mate.gene_food_sense) * 0.5, 0.6, 1.4)
-        child_gene_phero_sense = self._mutate_gene((self.gene_phero_sense + mate.gene_phero_sense) * 0.5, 0.6, 1.4)
+        mutation_rate = self._adaptive_mutation_rate(partner=mate)
+        child_gene_speed = self._mutate_gene((self.gene_speed + mate.gene_speed) * 0.5, 0.6, 1.4, mutation_rate)
+        child_gene_food_sense = self._mutate_gene(
+            (self.gene_food_sense + mate.gene_food_sense) * 0.5,
+            0.6,
+            1.4,
+            mutation_rate,
+        )
+        child_gene_phero_sense = self._mutate_gene(
+            (self.gene_phero_sense + mate.gene_phero_sense) * 0.5,
+            0.6,
+            1.4,
+            mutation_rate,
+        )
         child_gene_reproduction_energy = self._mutate_gene(
             (self.gene_reproduction_energy + mate.gene_reproduction_energy) * 0.5,
             120.0,
             280.0,
+            mutation_rate,
+        )
+        child_gene_metabolism = self._mutate_gene(
+            (self.gene_metabolism + mate.gene_metabolism) * 0.5,
+            0.6,
+            1.4,
+            mutation_rate,
         )
         child_turn_bias = self._mutate_gene(
             (self.genome["turn_bias"] + mate.genome["turn_bias"]) * 0.5,
             0.75,
             1.25,
+            mutation_rate,
         )
         child_efficiency = self._mutate_gene(
             (self.genome["energy_efficiency"] + mate.genome["energy_efficiency"]) * 0.5,
             0.75,
             1.25,
+            mutation_rate,
         )
 
         child_genes = {
@@ -329,10 +383,12 @@ class Worm:
             "gene_food_sense": child_gene_food_sense,
             "gene_phero_sense": child_gene_phero_sense,
             "gene_reproduction_energy": child_gene_reproduction_energy,
+            "gene_metabolism": child_gene_metabolism,
             "speed": child_gene_speed,
             "food_sense": child_gene_food_sense,
             "pheromone_sense": child_gene_phero_sense,
             "reproduction_energy": child_gene_reproduction_energy,
+            "metabolism": 0.01 * child_gene_metabolism,
             "turn_bias": child_turn_bias,
             "energy_efficiency": child_efficiency,
             "lineage_id": child_lineage_id,
@@ -795,7 +851,7 @@ class Worm:
             food_here = float(world.food[gx, gy])
 
         efficiency = max(0.6, self.genome["energy_efficiency"])
-        energy_loss = (0.02 / efficiency) * dt
+        energy_loss = (ENERGY_DECAY * self.gene_metabolism / efficiency) * dt
         if food_here < 0.05:
             energy_loss *= 1.5
         density = 0.0
