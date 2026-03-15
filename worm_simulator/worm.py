@@ -687,6 +687,12 @@ class Worm:
         if abs(turn_signal) < 0.01:
             self.angular_velocity *= 0.7
 
+        # Gradient chemotaxis: steer gently toward local food field gradient.
+        if abs(food_x) > 1e-6 or abs(food_y) > 1e-6:
+            target_angle = math.atan2(food_y, food_x)
+            angle_delta = math.atan2(math.sin(target_angle - self.angle), math.cos(target_angle - self.angle))
+            self.angle += angle_delta * 0.02
+
         if self.x < margin:
             self.angular_velocity += 0.05
         if self.x > world.width - margin:
@@ -750,6 +756,8 @@ class Worm:
             target_speed *= (0.7 + serotonin * 0.6)
             target_speed *= self.gene_speed
             target_speed *= water_level
+            energy_scale = max(0.1, min(1.0, self.energy / 500.0))
+            target_speed *= energy_scale
             if pheromone_here > 0.25:
                 target_speed *= 0.8
             if self.dauer:

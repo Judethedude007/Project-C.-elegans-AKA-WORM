@@ -67,7 +67,7 @@ RUNS_DIR_NAME = "runs"
 UI_STATS_LINE_HEIGHT = 18
 UI_HELP_LINE_HEIGHT = 17
 UI_PANEL_BOTTOM_PADDING = 40
-UI_STATS_COUNT = 17
+UI_STATS_COUNT = 25
 UI_HELP_COUNT = 10
 ENVIRONMENT_SLIDERS = ("temperature", "water", "oxygen", "food_growth", "season_speed")
 EVOLUTION_SLIDERS = ("mutation",)
@@ -884,6 +884,7 @@ while running:
                         world_surface.set_at((ix, iy), bacteria_color)
                     if intensity > 120:
                         pygame.draw.circle(world_surface, (0, intensity // 3, 0), (int(sx), int(sy)), 2)
+                        pygame.draw.circle(world_surface, (80, 255, 120, 45), (int(sx), int(sy)), 4)
 
                 pheromone_value = float(world.pheromone[fx, fy])
                 if pheromone_value > 0.2:
@@ -905,9 +906,19 @@ while running:
             if getattr(worm, "dauer", False):
                 base_color = (120, 170, 255)
                 head_color = (210, 230, 255)
+                tail_color = (80, 120, 200)
             else:
                 base_color = worm_rgb
                 head_color = (255, 200, 200)
+                tail_color = tuple(max(0, int(c * 0.55)) for c in worm_rgb)
+
+            # Motion blur trail improves perceived continuity of locomotion.
+            trail_points = []
+            for tx, ty in getattr(worm, "trail", [])[-TRAIL_STEPS:]:
+                tsx, tsy = world_to_screen(tx, ty, camera_x, camera_y, zoom, world_view_width, screen_height)
+                trail_points.append((int(tsx), int(tsy)))
+            if len(trail_points) >= 2:
+                pygame.draw.lines(world_surface, (120, 120, 130, 45), False, trail_points, 2)
 
             visible_segments = max(2, min(len(segment_points), int(round(len(segment_points) * max(0.25, worm.size)))))
             screen_points = []
@@ -916,6 +927,7 @@ while running:
                 screen_points.append((int(sx), int(sy)))
 
             for i in range(1, len(screen_points)):
+                pygame.draw.line(world_surface, (0, 0, 0, 60), (screen_points[i - 1][0] + 2, screen_points[i - 1][1] + 2), (screen_points[i][0] + 2, screen_points[i][1] + 2), 4)
                 pygame.draw.line(world_surface, base_color, screen_points[i - 1], screen_points[i], 4)
 
             for i, (px, py) in enumerate(segment_points[:visible_segments]):
@@ -924,7 +936,14 @@ while running:
                     continue
                 u = i / float(max(1, visible_segments - 1))
                 radius = max(1, int((6.0 * (1.0 - u) + 1.0) * max(0.7, min(1.6, zoom))))
-                color = head_color if i == 0 else base_color
+                if i == 0:
+                    color = head_color
+                elif i == visible_segments - 1:
+                    color = tail_color
+                    radius = max(1, radius - 1)
+                else:
+                    color = base_color
+                pygame.draw.circle(world_surface, (0, 0, 0, 85), (int(sx) + 2, int(sy) + 2), radius + 1)
                 pygame.draw.circle(world_surface, (0, 0, 0), (int(sx), int(sy)), radius + 2)
                 pygame.draw.circle(world_surface, color, (int(sx), int(sy)), radius)
 
@@ -996,33 +1015,60 @@ while running:
                 control_sliders[slider_key].draw(ui_surface, font, small_font)
             export_graph_button.draw(ui_surface, small_font)
 
-        stats = [
-            f"Target: {simulation_mode}",
-            f"Sim Time: {sim_time:.1f}s",
-            f"Worms: {len(worms)}",
-            f"Avg Energy: {avg_energy:.1f}",
-            f"Births: {total_births}",
-            f"Deaths: {total_deaths}",
-            f"Lineages: {total_lineages}",
-            f"Largest Colony: {largest_colony}",
-            f"Food Total: {total_food:.1f}",
-            f"Season: {world.season_name}",
-            f"Temperature: {world.temperature:.1f} C",
-            f"Births/s: {births_per_sec:.2f}",
-            f"Deaths/s: {deaths_per_sec:.2f}",
-            f"Dominant lineage: {dominant_lineage}",
-            f"OpenWorm: {openworm_status}",
-            f"CSV: {os.path.basename(evolution_logger.csv_path)}",
-            f"Graph: {graph_status}",
+        stats_groups = [
+            (
+                "Environment",
+                (
+                    f"Temperature: {world.temperature:.1f} C",
+                    f"Water: {world.water_level:.2f}",
+                    f"Oxygen: {world.oxygen_level:.2f}",
+                    f"Season: {world.season_name}",
+                    f"Food Total: {total_food:.1f}",
+                ),
+            ),
+            (
+                "Population",
+                (
+                    f"Worms: {len(worms)}",
+                    f"Births: {total_births}",
+                    f"Deaths: {total_deaths}",
+                    f"Lineages: {total_lineages}",
+                    f"Largest Colony: {largest_colony}",
+                ),
+            ),
+            (
+                "Evolution",
+                (
+                    f"Mutation Rate: {world.mutation_rate:.4f}",
+                    f"Dominant lineage: {dominant_lineage}",
+                    f"Avg Energy: {avg_energy:.1f}",
+                ),
+            ),
+            (
+                "Simulation",
+                (
+                    f"Target: {simulation_mode}",
+                    f"Sim Time: {sim_time:.1f}s",
+                    f"Births/s: {births_per_sec:.2f}",
+                    f"Deaths/s: {deaths_per_sec:.2f}",
+                    f"OpenWorm: {openworm_status}",
+                    f"CSV: {os.path.basename(evolution_logger.csv_path)}",
+                    f"Graph: {graph_status}",
+                ),
+            ),
         ]
 
         if not section_collapsed["stats"]:
             y = ui_layout["stats_y"]
             ui_surface.blit(font.render("Simulation Stats", True, (190, 210, 255)), (20, y))
             y += 24
-            for stat in stats:
-                ui_surface.blit(small_font.render(stat, True, (230, 230, 230)), (20, y))
+            for group_title, lines in stats_groups:
+                ui_surface.blit(small_font.render(group_title, True, (170, 200, 255)), (20, y))
                 y += UI_STATS_LINE_HEIGHT
+                for line in lines:
+                    ui_surface.blit(small_font.render(line, True, (230, 230, 230)), (20, y))
+                    y += UI_STATS_LINE_HEIGHT
+                y += 4
 
             camera_mode_name = "Free camera" if camera_mode == CAMERA_MODE_FREE else "Follow dominant lineage"
             y += 4
