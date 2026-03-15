@@ -26,15 +26,9 @@ class World:
     def season_progress(self):
         """
         Returns the progress through the current season as a float in [0.0, 1.0).
-        Each season is a quarter of the full 2π phase cycle.
+        Uses the new season_timer logic.
         """
-        # Normalize phase to [0, 2π)
-        phase = self.season_phase % (2.0 * math.pi)
-        # Each season is 1/4 of the cycle
-        season_length = (2.0 * math.pi) / 4.0
-        # Progress within the current season
-        progress = (phase % season_length) / season_length
-        return progress
+        return max(0.0, min(1.0, self.season_timer))
 
     def __init__(self):
         self.width = WORLD_SIZE
@@ -199,46 +193,26 @@ class World:
 
 
     def update(self, dt=1 / 60, active_chunks=None):
-                # --- Season cycling logic (new table-based system) ---
-                self.season_timer += dt * self.season_speed
-                if self.season_timer > 1.0:
-                    self.season_timer = 0.0
-                    self.advance_season()
+        # --- Season cycling logic (new table-based system) ---
+        self.season_timer += dt * self.season_speed
+        if self.season_timer > 1.0:
+            self.season_timer = 0.0
+            self.advance_season()
 
-    def advance_season(self):
-        i = self.seasons.index(self.current_season)
-        self.current_season = self.seasons[(i + 1) % len(self.seasons)]
-        # Climate toggle logic
-        if self.climate_enabled:
-            self.control_temperature += random.uniform(-0.01, 0.01)
-            self.control_temperature = max(0.8, min(1.2, self.control_temperature))
-
-            self.water_level += random.uniform(-0.005, 0.005)
-            self.water_level = max(0.7, min(1.3, self.water_level))
-
-            self.mutation_rate += random.uniform(-0.0001, 0.0001)
-            self.mutation_rate = max(0.005, min(0.05, self.mutation_rate))
-
+        # --- Main simulation logic ---
+        # Seasonal effects
+        season_factor = self.season_effects[self.current_season]["food_growth"]
+        metabolism_factor = self.season_effects[self.current_season]["metabolism"]
+        # Food growth
         time_scale = max(dt * 60.0, 0.0)
-        self.season_time += dt
-        if self.climate_enabled:
-            self.season_phase += self.season_speed * time_scale
-            self.season_signal = math.sin(self.season_phase)
-            phase_norm = (self.season_phase % (2.0 * math.pi)) / (2.0 * math.pi)
-            self.season_index = int(phase_norm * 4.0) % 4
-            self.season_name = SEASON_NAMES[self.season_index]
-            self.base_temperature = SEASON_TEMPERATURE[self.season_index]
-            self.temperature = self.base_temperature * self.control_temperature
-        seasonal_growth = 0.5 + 0.5 * self.season_signal
-        active_mask = self._build_active_mask(active_chunks, margin_cells=1)
+        seasonal_growth = 0.5 + 0.5 * math.sin(self.season_timer * 2 * math.pi)
+        active_mask = self._build_active_mask(active_chunks, margin_cells=1) if active_chunks is not None else None
         self.food_age += dt
 
-        # Logistic bacterial growth gives self-limited patch expansion.
+        # Logistic bacterial growth gives self-limited patch expansion
         logistic_growth = LOGISTIC_GROWTH_RATE * seasonal_growth * self.food * (1.0 - self.food / FOOD_MAX_DENSITY)
-        user_growth = self.food_growth_rate * seasonal_growth
+        user_growth = self.food_growth_rate * season_factor * seasonal_growth
 
-        # Food patch spreading creates organic cluster growth rather than static fields.
-        # Food diffusion: existing patches spread organically to neighbouring cells.
         food_candidate = self.food + user_growth * time_scale + logistic_growth * time_scale + 0.15 * seasonal_growth * (
             np.roll(self.food, 1, axis=0)
             + np.roll(self.food, -1, axis=0)
@@ -254,18 +228,17 @@ class World:
         else:
             self.food[active_mask] = food_candidate[active_mask]
 
-        # Sparse regrowth seeds new patches where food is depleted.
+        # Sparse regrowth seeds new patches where food is depleted
         regrow_chance = min(1.0, 0.0005 * time_scale * seasonal_growth)
         regrow_mask = (self.food < 0.1) & (np.random.random(self.food.shape) < regrow_chance)
         if active_mask is not None:
             regrow_mask &= active_mask
-        season_factor = self.season_effects[self.current_season]["food_growth"]
         self.food[regrow_mask] += 0.05 * season_factor
         self.food_age[regrow_mask] = 0.0
 
         np.clip(self.food, 0.0, 1.0, out=self.food)
 
-        # Oxygen is higher near plate edges and lower in dense food/worm clusters.
+        # Oxygen is higher near plate edges and lower in dense food/worm clusters
         oxygen_candidate = self.edge_oxygen * self.oxygen_level - self.food * 0.35 - self.worm_density * 0.2
         oxygen_candidate = np.clip(oxygen_candidate, 0.0, 1.0)
         if active_mask is None:
@@ -274,14 +247,14 @@ class World:
             self.oxygen[active_mask] = oxygen_candidate[active_mask]
         np.clip(self.oxygen, 0.0, 1.0, out=self.oxygen)
 
-        # Food releases chemical signal into the smell map.
+        # Food releases chemical signal into the smell map
         chem_release = self.food * 2.5 * seasonal_growth * time_scale
         if active_mask is None:
             self.chem += chem_release
         else:
             self.chem[active_mask] += chem_release[active_mask]
 
-        # Diffuse chemical concentration to neighboring cells.
+        # Diffuse chemical concentration to neighboring cells
         new_chem = np.zeros_like(self.chem)
         new_chem[1:-1, 1:-1] = (
             self.chem[1:-1, 1:-1] * 0.7
@@ -298,17 +271,34 @@ class World:
         else:
             self.chem[active_mask] = np.clip(new_chem[active_mask], 0.0, 100.0)
 
-        if random.random() < 0.001:
-            max_val = max(max(row) for row in self.chem)
-            print("chem max:", max_val)
-
-        # Pheromone decays slowly over time.
+        # Pheromone decays slowly over time
         pheromone_decay = 0.995 ** time_scale
         if active_mask is None:
             self.pheromone *= pheromone_decay
         else:
             self.pheromone[active_mask] *= pheromone_decay
         np.clip(self.pheromone, 0.0, 1000.0, out=self.pheromone)
+
+    def advance_season(self):
+        i = self.seasons.index(self.current_season)
+        self.current_season = self.seasons[(i + 1) % len(self.seasons)]
+
+        # Update all season-related state for UI and effects
+        self.season_index = i = self.seasons.index(self.current_season)
+        self.season_name = self.seasons[self.season_index]
+        self.base_temperature = SEASON_TEMPERATURE[self.season_index]
+        self.temperature = self.base_temperature * self.control_temperature
+
+        # Climate toggle logic
+        if self.climate_enabled:
+            self.control_temperature += random.uniform(-0.01, 0.01)
+            self.control_temperature = max(0.8, min(1.2, self.control_temperature))
+
+            self.water_level += random.uniform(-0.005, 0.005)
+            self.water_level = max(0.7, min(1.3, self.water_level))
+
+            self.mutation_rate += random.uniform(-0.0001, 0.0001)
+            self.mutation_rate = max(0.005, min(0.05, self.mutation_rate))
 
     def get_food(self, x, y):
         gx = int((x % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)

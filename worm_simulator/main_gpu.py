@@ -1,3 +1,10 @@
+# Tint colors for each season
+SEASON_TINTS = {
+    "Spring": (20, 60, 20),
+    "Summer": (60, 60, 20),
+    "Autumn": (70, 40, 10),
+    "Winter": (20, 40, 70),
+}
 # --- Season Progress Bar Drawing Function ---
 def draw_progress_bar(surface, x, y, width, height, progress, color, bg_color=(60,60,70)):
     pygame.draw.rect(surface, bg_color, (x, y, width, height), border_radius=6)
@@ -972,7 +979,12 @@ while running:
     else:
         screen.fill((8, 8, 12))
 
-    world_surface.fill((6, 8, 14, 255))
+    # Use black background if climate is disabled, otherwise use seasonal tint
+    if getattr(world, "climate_enabled", False):
+        tint = SEASON_TINTS.get(getattr(world, "current_season", "Spring"), (20, 20, 20))
+        world_surface.fill(tint)
+    else:
+        world_surface.fill((0, 0, 0))
     for sx, sy, v in background_stars:
         world_surface.set_at((sx, sy), (v, v, min(120, v + 20), 255))
 
@@ -1152,9 +1164,9 @@ while running:
             climate_button.draw(ui_surface, small_font)
             # Draw the season speed slider directly under the climate button
             control_sliders["season_speed"].draw(ui_surface, font, small_font)
-            # Draw the season progress bar under the season speed slider
+            # Add extra gap before the progress bar to avoid overlap
             bar_x = control_sliders["season_speed"].rect.x
-            bar_y = control_sliders["season_speed"].rect.y + control_sliders["season_speed"].rect.height + 12
+            bar_y = control_sliders["season_speed"].rect.y + control_sliders["season_speed"].rect.height + 24
             bar_width = control_sliders["season_speed"].rect.width
             bar_height = 18
             bar_color = SEASON_COLORS.get(world.season_name, (200, 200, 200))
