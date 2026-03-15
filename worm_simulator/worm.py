@@ -928,6 +928,7 @@ class Worm:
                 # ignore pheromone trails when starving
                 pheromone_turn *= 0.3
                 
+                
 
         # --- Energy loss from movement (seasonal metabolism) ---
         metabolism = world.season_effects[world.current_season]["metabolism"]
