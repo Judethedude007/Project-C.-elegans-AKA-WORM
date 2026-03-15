@@ -1,6 +1,16 @@
 import random
+import math
 import numpy as np
-from config import WORLD_SIZE, WORLD_CHUNK_SIZE
+from config import (
+    WORLD_SIZE,
+    WORLD_CHUNK_SIZE,
+    TEMPERATURE,
+    WATER_LEVEL,
+    OXYGEN_LEVEL,
+    FOOD_GROWTH_RATE,
+    MUTATION_RATE,
+    SEASON_SPEED,
+)
 
 GRID_SIZE = 128
 SEASON_DURATION = 300.0
@@ -31,9 +41,18 @@ class World:
         self.chunk_count = max(1, WORLD_SIZE // self.chunk_world_size)
         self.chunk_food_cells = max(1, GRID_SIZE // self.chunk_count)
         self.season_time = 0.0
+        self.season_phase = 0.0
+        self.season_signal = 0.0
         self.season_index = 0
         self.season_name = SEASON_NAMES[self.season_index]
-        self.temperature = SEASON_TEMPERATURE[self.season_index]
+        self.base_temperature = SEASON_TEMPERATURE[self.season_index]
+        self.temperature = self.base_temperature
+        self.control_temperature = float(TEMPERATURE)
+        self.water_level = float(WATER_LEVEL)
+        self.oxygen_level = float(OXYGEN_LEVEL)
+        self.food_growth_rate = float(FOOD_GROWTH_RATE)
+        self.mutation_rate = float(MUTATION_RATE)
+        self.season_speed = float(SEASON_SPEED)
 
         axis = np.linspace(-1.0, 1.0, GRID_SIZE, dtype=np.float32)
         edge_x, edge_y = np.meshgrid(axis, axis, indexing="ij")
@@ -62,6 +81,28 @@ class World:
             gx = random.randint(0, GRID_SIZE - 1)
             gy = random.randint(0, GRID_SIZE - 1)
             self._add_medium_patch(gx, gy, radius=8, value=1.0)
+
+    def set_environment_controls(
+        self,
+        temperature=None,
+        water_level=None,
+        oxygen_level=None,
+        food_growth_rate=None,
+        mutation_rate=None,
+        season_speed=None,
+    ):
+        if temperature is not None:
+            self.control_temperature = max(0.5, min(2.0, float(temperature)))
+        if water_level is not None:
+            self.water_level = max(0.2, min(2.0, float(water_level)))
+        if oxygen_level is not None:
+            self.oxygen_level = max(0.2, min(2.0, float(oxygen_level)))
+        if food_growth_rate is not None:
+            self.food_growth_rate = max(0.0001, min(0.01, float(food_growth_rate)))
+        if mutation_rate is not None:
+            self.mutation_rate = max(0.0, min(0.1, float(mutation_rate)))
+        if season_speed is not None:
+            self.season_speed = max(0.00005, min(0.01, float(season_speed)))
 
     def _add_food_gaussian(self, cx_world, cy_world, std=40, n=3000):
         xs = np.random.normal(cx_world, std, n).astype(int)
@@ -127,18 +168,23 @@ class World:
     def update(self, dt=1 / 60, active_chunks=None):
         time_scale = max(dt * 60.0, 0.0)
         self.season_time += dt
-        self.season_index = int(self.season_time / SEASON_DURATION) % 4
+        self.season_phase += self.season_speed * time_scale
+        self.season_signal = math.sin(self.season_phase)
+        phase_norm = (self.season_phase % (2.0 * math.pi)) / (2.0 * math.pi)
+        self.season_index = int(phase_norm * 4.0) % 4
         self.season_name = SEASON_NAMES[self.season_index]
-        self.temperature = SEASON_TEMPERATURE[self.season_index]
-        seasonal_growth = SEASON_GROWTH_MULTIPLIER[self.season_index]
+        self.base_temperature = SEASON_TEMPERATURE[self.season_index]
+        self.temperature = self.base_temperature * self.control_temperature
+        seasonal_growth = 0.5 + 0.5 * self.season_signal
         active_mask = self._build_active_mask(active_chunks, margin_cells=1)
         self.food_age += dt
 
         # Logistic bacterial growth gives self-limited patch expansion.
         logistic_growth = LOGISTIC_GROWTH_RATE * seasonal_growth * self.food * (1.0 - self.food / FOOD_MAX_DENSITY)
+        user_growth = self.food_growth_rate * seasonal_growth
 
         # Food patch spreading creates organic cluster growth rather than static fields.
-        food_candidate = self.food + logistic_growth * time_scale + 0.02 * seasonal_growth * (
+        food_candidate = self.food + user_growth * time_scale + logistic_growth * time_scale + 0.02 * seasonal_growth * (
             np.roll(self.food, 1, axis=0)
             + np.roll(self.food, -1, axis=0)
             + np.roll(self.food, 1, axis=1)
@@ -164,7 +210,7 @@ class World:
         np.clip(self.food, 0.0, 1.0, out=self.food)
 
         # Oxygen is higher near plate edges and lower in dense food/worm clusters.
-        oxygen_candidate = self.edge_oxygen - self.food * 0.35 - self.worm_density * 0.2
+        oxygen_candidate = self.edge_oxygen * self.oxygen_level - self.food * 0.35 - self.worm_density * 0.2
         oxygen_candidate = np.clip(oxygen_candidate, 0.0, 1.0)
         if active_mask is None:
             self.oxygen = oxygen_candidate
@@ -226,7 +272,7 @@ class World:
     def sample_medium(self, x, y):
         gx = int((x % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
         gy = int((y % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
-        return float(self.medium[gx % GRID_SIZE, gy % GRID_SIZE])
+        return float(self.medium[gx % GRID_SIZE, gy % GRID_SIZE]) * self.water_level
 
     def get_pheromone(self, x, y):
         return self.sample_pheromone(x, y)

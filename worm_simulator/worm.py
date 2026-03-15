@@ -1,7 +1,7 @@
 import math
 import random
 from brain import Brain
-from config import WORLD_SIZE, REPRODUCTION_ENERGY, ENERGY_DECAY
+from config import WORLD_SIZE, REPRODUCTION_ENERGY, ENERGY_DECAY, MUTATION_RATE
 from world import GRID_SIZE
 
 METABOLISM = 0.3
@@ -116,6 +116,7 @@ class Worm:
         self.state = "RUN"
         self.run_timer = 0.0
         self.dauer = False
+        self.environment_mutation_rate = float(MUTATION_RATE)
         self.neurons = {
             "ASE": 0.0,
             "AWC": 0.0,
@@ -320,7 +321,7 @@ class Worm:
             partner_stress = max(0.0, min(1.0, partner_stress))
             stress = 0.5 * (own_stress + partner_stress)
 
-        base_rate = 0.02
+        base_rate = max(0.0, min(0.1, float(getattr(self, "environment_mutation_rate", MUTATION_RATE))))
         return max(base_rate, min(0.25, base_rate + stress * 0.1))
 
     @staticmethod
@@ -514,6 +515,7 @@ class Worm:
         self.time += dt
         self.age += dt
         self.repro_timer -= dt
+        self.environment_mutation_rate = max(0.0, min(0.1, float(getattr(world, "mutation_rate", MUTATION_RATE))))
         self._update_stage()
         segment_length = BASE_SEGMENT_LENGTH * self.size
 
@@ -587,6 +589,8 @@ class Worm:
         oxygen_here = 1.0
         if 0 <= feed_gx < GRID_SIZE and 0 <= feed_gy < GRID_SIZE:
             oxygen_here = float(world.oxygen[feed_gx, feed_gy])
+        temperature_scale = max(0.5, min(2.0, float(getattr(world, "control_temperature", 1.0))))
+        water_level = max(0.2, min(2.0, float(getattr(world, "water_level", 1.0))))
         oxygen_pref = 0.55
         oxygen_signal = max(-1.0, min(1.0, oxygen_pref - oxygen_here))
         oxygen_turn = oxygen_signal * 0.22
@@ -612,12 +616,12 @@ class Worm:
         turn = food_turn + pheromone_turn + reverse_drive * 0.25
         pheromone_signal_here = self.neurons["AWC"]
 
-        if (not self.dauer) and food_here < 0.05 and pheromone_signal_here > 0.2 and self.energy < 80:
+        if (not self.dauer) and self.energy < 20.0 and food_here < 0.03:
             self.dauer = True
             self.stage = "dauer"
             self.size = min(self.size, 0.35)
 
-        if self.dauer and food_here > 0.15:
+        if self.dauer and food_here > 0.12 and self.energy > 25.0:
             self.dauer = False
 
         self.direction = -1 if reverse_drive > 0.45 else 1
@@ -740,10 +744,11 @@ class Worm:
             target_speed = speed
             target_speed *= (0.7 + serotonin * 0.6)
             target_speed *= self.gene_speed
+            target_speed *= water_level
             if pheromone_here > 0.25:
                 target_speed *= 0.8
             if self.dauer:
-                target_speed *= 0.2
+                target_speed = 0.0
 
             self.angle += random.uniform(-0.03, 0.03)
 
@@ -861,6 +866,7 @@ class Worm:
 
         efficiency = max(0.6, self.genome["energy_efficiency"])
         energy_loss = (ENERGY_DECAY * self.gene_metabolism / efficiency) * dt
+        energy_loss *= temperature_scale
         movement_cost = MOVE_COST * (head_speed / max(MAX_SPEED, 1e-6)) * dt
         energy_loss += movement_cost
         if food_here < 0.05:
@@ -873,6 +879,8 @@ class Worm:
             energy_loss *= 0.1
 
         self.energy -= energy_loss
+        if oxygen_here < 0.2:
+            self.energy -= 0.3 * dt * 60.0
 
         food_eaten = 0.0
 
@@ -941,6 +949,8 @@ class Worm:
 
         if self.age > 350.0:
             death_prob = max(0.0, min(1.0, (self.age - 350.0) / 150.0))
+            if self.dauer:
+                death_prob *= 0.1
             if random.random() < death_prob * dt:
                 self.dead = True
                 return False
