@@ -560,7 +560,7 @@ class Worm:
         child_genes = self._build_mutated_child_genes()
         self._spawn_egg(child_genes, inherited_expression, new_worms, new_eggs)
         self.energy -= 60
-        self.repro_timer = 30.0
+        self.repro_timer = 15.0
 
     def _find_mate(self, nearby_worms):
         if not nearby_worms:
@@ -609,8 +609,8 @@ class Worm:
         )
         self.energy -= 20
         mate.energy -= 60
-        self.repro_timer = 12.0
-        mate.repro_timer = 30.0
+        self.repro_timer = 15.0
+        mate.repro_timer = 15.0
 
     @staticmethod
     def _lineage_color(lineage_id):
