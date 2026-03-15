@@ -90,13 +90,26 @@ world_surface = pygame.Surface((world_view_width, screen_height), flags=pygame.S
 ui_surface = pygame.Surface((UI_WIDTH, screen_height), flags=pygame.SRCALPHA)
 show_ui = True
 
+# Correct output folder path
+OUTPUT_FOLDER_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../openworm/output'))
+
+def open_output_folder():
+    import os
+    import sys
+    import subprocess
+    output_path = OUTPUT_FOLDER_PATH
+    if sys.platform.startswith("win"):
+        os.startfile(output_path)
+    elif sys.platform.startswith("darwin"):
+        subprocess.Popen(["open", output_path])
+    else:
+        subprocess.Popen(["xdg-open", output_path])
 
 def generate_background_stars(width, height, count):
     stars = []
     for _ in range(count):
         stars.append((random.randint(0, max(0, width - 1)), random.randint(0, max(0, height - 1)), random.randint(30, 90)))
     return stars
-
 
 background_stars = generate_background_stars(world_view_width, screen_height, BACKGROUND_STAR_COUNT)
 
@@ -105,7 +118,6 @@ if IMGUI_AVAILABLE:
     imgui_renderer = PygameRenderer()
 else:
     imgui_renderer = None
-
 
 class Slider:
 
@@ -150,7 +162,6 @@ class Slider:
         text = value_font.render(f"{self.label}: {self.value:.4f}" if self.max <= 0.02 else f"{self.label}: {self.value:.2f}", True, (225, 225, 225))
         surface.blit(text, (self.rect.x, self.rect.y - 20))
 
-
 class UIButton:
 
     def __init__(self, x, y, width, height, label):
@@ -168,12 +179,10 @@ class UIButton:
     def hit(self, local_pos):
         return self.rect.collidepoint(local_pos)
 
-
 def create_render_surfaces(view_width, view_height):
     world_surf = pygame.Surface((max(1, view_width), max(1, view_height)), flags=pygame.SRCALPHA)
     ui_surf = pygame.Surface((UI_WIDTH, max(1, view_height)), flags=pygame.SRCALPHA)
     return world_surf, ui_surf
-
 
 def apply_world_controls(world_obj, sliders):
     world_obj.set_environment_controls(
@@ -185,7 +194,6 @@ def apply_world_controls(world_obj, sliders):
         season_speed=sliders["season_speed"].value,
     )
 
-
 def get_active_slider_keys():
     keys = []
     if not section_collapsed["environment"]:
@@ -195,7 +203,6 @@ def get_active_slider_keys():
     if not section_collapsed["simulation"]:
         keys.extend(SIMULATION_SLIDERS)
     return tuple(keys)
-
 
 def update_ui_layout(scroll_offset):
     ui_y = 20 + scroll_offset
@@ -257,7 +264,6 @@ def update_ui_layout(scroll_offset):
         "content_bottom": content_bottom,
         "scroll_offset": scroll_offset,
     }
-
 
 world = World()
 worms = []
@@ -328,17 +334,14 @@ max_generation = 0
 view_mode = 0
 debug_log_timer = 0.0
 
-
 def spawn_initial_population(count=INITIAL_WORMS):
     worms.clear()
     eggs.clear()
     for _ in range(max(1, int(count))):
         worms.append(spawn_worm_near_food())
 
-
 def switch_to_ecosystem():
     spawn_initial_population(INITIAL_WORMS)
-
 
 def launch_openworm():
     root = os.path.dirname(os.path.dirname(__file__))
@@ -376,7 +379,6 @@ def launch_openworm():
     except Exception as exc:
         return False, f"OpenWorm launch failed: {exc}"
 
-
 def launch_graph_export(csv_path):
     plot_script = os.path.join(os.path.dirname(__file__), "plot_evolution.py")
     if not os.path.exists(plot_script):
@@ -389,7 +391,6 @@ def launch_graph_export(csv_path):
         return True, f"Opened graph for {os.path.basename(csv_path)}"
     except Exception as exc:
         return False, f"Graph export failed: {exc}"
-
 
 def split_by_gap(points, max_gap):
     strips = []
@@ -412,7 +413,6 @@ def split_by_gap(points, max_gap):
         strips.append(current_strip)
 
     return strips
-
 
 def build_tapered_mesh(points, base_width):
     n = len(points)
@@ -451,7 +451,6 @@ def build_tapered_mesh(points, base_width):
 
     return np.array(mesh, dtype="f4") if mesh else np.empty((0, 2), dtype="f4")
 
-
 def spawn_worm_near_food():
     spawn_center_x = float(getattr(world, "food_center_x", WORLD_SIZE * 0.5))
     spawn_center_y = float(getattr(world, "food_center_y", WORLD_SIZE * 0.5))
@@ -461,7 +460,6 @@ def spawn_worm_near_food():
     y = max(0.0, min(y, WORLD_SIZE - 1.0))
     return Worm(x, y, inherited_genes={"generation": 0})
 
-
 def toggle_fullscreen_state(current_fullscreen):
     next_fullscreen = not current_fullscreen
     flags = display_flags | (pygame.FULLSCREEN if next_fullscreen else 0)
@@ -470,7 +468,6 @@ def toggle_fullscreen_state(current_fullscreen):
     new_width, new_height = new_screen.get_size()
     new_world_width = max(1, new_width - UI_WIDTH)
     return next_fullscreen, new_screen, new_width, new_height, new_world_width
-
 
 def world_to_screen(world_x, world_y, camera_x, camera_y, zoom, view_width, view_height):
     camera_norm_x = (camera_x / WORLD_SIZE) * world_scale
@@ -482,7 +479,6 @@ def world_to_screen(world_x, world_y, camera_x, camera_y, zoom, view_width, view
     screen_x = (clip_x * 0.5 + 0.5) * view_width
     screen_y = (0.5 - clip_y * 0.5) * view_height
     return screen_x, screen_y
-
 
 switch_to_ecosystem()
 
@@ -589,6 +585,9 @@ while running:
                         section_collapsed["stats"] = not section_collapsed["stats"]
                     elif (not section_collapsed["simulation"]) and export_graph_button.hit(local_pos):
                         launched, graph_status = launch_graph_export(evolution_logger.csv_path)
+                    # Check for Open Output Folder button click
+                    elif (not section_collapsed["stats"]) and open_output_folder_button_rect is not None and open_output_folder_button_rect.collidepoint(local_pos):
+                        open_output_folder()
 
                 slider_changed = False
                 for slider_key in get_active_slider_keys():
@@ -1087,20 +1086,19 @@ while running:
                     y += UI_STATS_LINE_HEIGHT
                 y += 4
 
-            # Output folder display
-            import os
-            output_path = os.path.abspath("output")
-            output_label = f"Output Folder:\n{output_path}"
+            # Output folder display (use correct path)
+            output_label = f"Output Folder:\n{OUTPUT_FOLDER_PATH}"
             for line in output_label.split("\n"):
                 ui_surface.blit(small_font.render(line, True, (200, 255, 200)), (20, y))
                 y += UI_STATS_LINE_HEIGHT
 
-            # 'Open Output Folder' button (simple rectangle, click detection in event loop required for full functionality)
-            button_rect = pygame.Rect(20, y, 200, 28)
-            pygame.draw.rect(ui_surface, (60, 120, 60), button_rect, border_radius=6)
-            pygame.draw.rect(ui_surface, (180, 255, 180), button_rect, width=2, border_radius=6)
+            # 'Open Output Folder' button (track rect globally for event handling)
+            # (No global statement needed here)
+            open_output_folder_button_rect = pygame.Rect(20, y, 200, 28)
+            pygame.draw.rect(ui_surface, (60, 120, 60), open_output_folder_button_rect, border_radius=6)
+            pygame.draw.rect(ui_surface, (180, 255, 180), open_output_folder_button_rect, width=2, border_radius=6)
             btn_text = small_font.render("Open Output Folder", True, (255, 255, 255))
-            ui_surface.blit(btn_text, (button_rect.x + 10, button_rect.y + 4))
+            ui_surface.blit(btn_text, (open_output_folder_button_rect.x + 10, open_output_folder_button_rect.y + 4))
             y += 36
 
             camera_mode_name = "Free camera" if camera_mode == CAMERA_MODE_FREE else "Follow dominant lineage"
