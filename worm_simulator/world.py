@@ -259,7 +259,8 @@ class World:
         regrow_mask = (self.food < 0.1) & (np.random.random(self.food.shape) < regrow_chance)
         if active_mask is not None:
             regrow_mask &= active_mask
-        self.food[regrow_mask] += 0.05
+        season_factor = self.season_effects[self.current_season]["food_growth"]
+        self.food[regrow_mask] += 0.05 * season_factor
         self.food_age[regrow_mask] = 0.0
 
         np.clip(self.food, 0.0, 1.0, out=self.food)
