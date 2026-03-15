@@ -32,6 +32,8 @@ MALE_RATIO = 0.05
 MATING_RANGE = 5.0
 MALE_COLOR = (80.0 / 255.0, 120.0 / 255.0, 255.0 / 255.0)
 MAX_ENERGY_FOR_STRESS = 200.0
+EGG_CLUSTER_MIN = 2
+EGG_CLUSTER_MAX = 4
 
 
 def lerp(a, b, t):
@@ -62,7 +64,7 @@ class Egg:
     ):
         self.x = x % WORLD_SIZE
         self.y = y % WORLD_SIZE
-        self.hatch_timer = random.uniform(30.0, 60.0)
+        self.hatch_timer = random.uniform(180.0, 140.0)
         self.timer = self.hatch_timer
         self.generation = int(generation)
         if lineage_id is None:
@@ -558,7 +560,9 @@ class Worm:
             "liquid": (1.0 - persistence) * 0.0 + persistence * self.gene_expression["liquid"],
         }
         child_genes = self._build_mutated_child_genes()
-        self._spawn_egg(child_genes, inherited_expression, new_worms, new_eggs)
+        egg_count = random.randint(EGG_CLUSTER_MIN, EGG_CLUSTER_MAX)
+        for _ in range(egg_count):
+            self._spawn_egg(child_genes, inherited_expression, new_worms, new_eggs)
         self.energy -= 60
         self.repro_timer = 15.0
 
@@ -599,14 +603,16 @@ class Worm:
         }
         spawn_x = (self.x + mate.x) * 0.5
         spawn_y = (self.y + mate.y) * 0.5
-        self._spawn_egg(
-            child_genes,
-            inherited_expression,
-            new_worms=new_worms,
-            new_eggs=new_eggs,
-            parent_x=spawn_x,
-            parent_y=spawn_y,
-        )
+        egg_count = random.randint(EGG_CLUSTER_MIN, EGG_CLUSTER_MAX)
+        for _ in range(egg_count):
+            self._spawn_egg(
+                child_genes,
+                inherited_expression,
+                new_worms=new_worms,
+                new_eggs=new_eggs,
+                parent_x=spawn_x,
+                parent_y=spawn_y,
+            )
         self.energy -= 20
         mate.energy -= 60
         self.repro_timer = 15.0
@@ -914,7 +920,7 @@ class Worm:
 
         # --- Energy loss from movement (seasonal metabolism) ---
         metabolism = world.season_effects[world.current_season]["metabolism"]
-        self.energy -= target_speed * 0.02 * metabolism
+        self.energy -= target_speed * 0.012 * metabolism  # ← reduced from 0.02 to 0.012
 
         head_vx, head_vy = self.vel[0]
         head_vx *= GROUND_FRICTION
@@ -1051,10 +1057,10 @@ class Worm:
             # Distance check for food contact
             dist_to_food = math.hypot(self.x - (gx * WORLD_SIZE / GRID_SIZE), self.y - (gy * WORLD_SIZE / GRID_SIZE))
             if world.food[gx, gy] > 0 and not self.dauer and dist_to_food < 6:
-                eaten = min(0.05 * time_scale, world.food[gx, gy])
+                eaten = min(0.12 * time_scale, world.food[gx, gy])  # ← increased from 0.05 to 0.12
                 world.food[gx, gy] -= eaten
                 world.food_age[gx, gy] = 0.0
-                self.energy += eaten * 7
+                self.energy += eaten * 14  # ← increased from 7 to 14
                 food_eaten += eaten
                 eating = True
 
@@ -1098,7 +1104,7 @@ class Worm:
 
 
         # --- Reproduction only if energy and age thresholds are met ---
-        reproduction_threshold = self.gene_reproduction_energy
+        reproduction_threshold = max(500, self.gene_reproduction_energy)
         maturity_age = 40
         if (not self.dauer) and self.stage == "adult" and self.repro_timer <= 0:
             if self.sex == "hermaphrodite":
