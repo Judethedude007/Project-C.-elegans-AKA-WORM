@@ -573,6 +573,9 @@ class Worm:
         food_signal = food_here + food_gradient
         food_signal /= adaptation_scale
         food_signal *= self.gene_food_sense
+        if not math.isfinite(food_signal):
+            food_signal = 0.0
+        food_signal = max(-5.0, min(5.0, food_signal))
         gradient_change = food_signal - self.prev_food_signal
         self.prev_food_signal = food_signal
 
@@ -584,9 +587,9 @@ class Worm:
         oxygen_here = 1.0
         if 0 <= feed_gx < GRID_SIZE and 0 <= feed_gy < GRID_SIZE:
             oxygen_here = float(world.oxygen[feed_gx, feed_gy])
-        oxygen_pref = 0.08
-        oxygen_signal = oxygen_pref - oxygen_here
-        oxygen_turn = oxygen_signal * 0.3
+        oxygen_pref = 0.55
+        oxygen_signal = max(-1.0, min(1.0, oxygen_pref - oxygen_here))
+        oxygen_turn = oxygen_signal * 0.22
         touch = max(0.0, min(1.0, (margin - min_edge_distance) / margin)) * 3.0
 
         local_density = world.count_worms_near(self.x, self.y, radius=20)
@@ -762,6 +765,8 @@ class Worm:
             scale = MAX_SPEED / speed
             head_vx *= scale
             head_vy *= scale
+            speed = MAX_SPEED
+        head_speed = speed
 
         self.x += head_vx * dt
         self.y += head_vy * dt
@@ -856,6 +861,8 @@ class Worm:
 
         efficiency = max(0.6, self.genome["energy_efficiency"])
         energy_loss = (ENERGY_DECAY * self.gene_metabolism / efficiency) * dt
+        movement_cost = MOVE_COST * (head_speed / max(MAX_SPEED, 1e-6)) * dt
+        energy_loss += movement_cost
         if food_here < 0.05:
             energy_loss *= 1.5
         density = 0.0

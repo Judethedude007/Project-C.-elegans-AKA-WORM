@@ -67,7 +67,7 @@ camera_x = avg_x
 camera_y = avg_y
 zoom = DEFAULT_ZOOM
 
-camera_mode = CAMERA_MODE_FREE
+camera_mode = CAMERA_MODE_DOMINANT
 births_per_sec = 0.0
 deaths_per_sec = 0.0
 total_births = 0
@@ -127,8 +127,8 @@ def build_tapered_mesh(points, base_width):
         ny = tx / tlen
 
         u = i / float(denom)
-        width_profile = 1.0 - abs(u - 0.5) * 1.5
-        width_profile = max(0.22, width_profile)
+        width_profile = 1.0 - 0.75 * u
+        width_profile = max(0.2, width_profile)
         width = base_width * width_profile
 
         mesh.append((p[0] + nx * width, p[1] + ny * width))
@@ -171,6 +171,10 @@ def world_to_screen(world_x, world_y, camera_x, camera_y, zoom, view_width, view
 
 for _ in range(INITIAL_WORMS):
     worms.append(spawn_worm_near_food())
+
+if worms:
+    camera_x = sum(w.x for w in worms) / len(worms)
+    camera_y = sum(w.y for w in worms) / len(worms)
 
 while running:
 
@@ -311,6 +315,9 @@ while running:
     if len(worms) == 0:
         for _ in range(2):
             worms.append(spawn_worm_near_food())
+        if worms:
+            camera_x = sum(w.x for w in worms) / len(worms)
+            camera_y = sum(w.y for w in worms) / len(worms)
 
     debug_log_timer += frame_time
     if debug_log_timer >= DEBUG_VISIBILITY_LOG_INTERVAL:
@@ -399,11 +406,11 @@ while running:
             gy = ((y + 0.5) / GRID_SIZE) * world_scale
 
             food_value = world.food[x, y]
-            if food_value > 0.7 and random.random() < 0.18:
+            if food_value > 0.7:
                 food_high.append([gx, gy])
-            elif food_value > 0.3 and random.random() < 0.12:
+            elif food_value > 0.3:
                 food_mid.append([gx, gy])
-            elif food_value > 0.08 and random.random() < 0.06:
+            elif food_value > 0.05:
                 food_low.append([gx, gy])
 
     pheromone_grid_size = world.pheromone.shape[0]
@@ -456,11 +463,11 @@ while running:
     empty_points = np.empty((0, 2), dtype="f4")
 
     if view_mode == 0:
-        render_worm_strips = []
+        render_worm_strips = worm_strips
         render_food_layers = food_layers
         render_chemical_layers = []
         render_pheromone_positions = empty_points
-        render_head_positions = empty_points
+        render_head_positions = head_positions
     elif view_mode == 1:
         render_worm_strips = []
         render_food_layers = []
@@ -623,7 +630,10 @@ while running:
         screen.blit(small_font.render(line, True, value_color), (panel_x, y))
         y += 18
 
-    pygame.display.set_caption("Worm Simulator GPU - Phase 21")
+    pygame.display.set_caption(
+        f"Worms:{len(worms)} Food:{total_food:.0f} Lineages:{total_lineages} "
+        f"Gen:{max_generation} Season:{world.season_name}"
+    )
 
     pygame.display.flip()
 
