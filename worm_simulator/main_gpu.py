@@ -1333,3 +1333,10 @@ pygame.quit()
 # Plot stats graphs after simulation ends
 stats.plot_population()
 stats.plot_gene_evolution()
+
+
+# & "d:\Project worm\.venv\Scripts\Activate.ps1"
+# cd "D:\Project worm"
+# python worm_simulator/main.py
+# PS D:\Project worm\worm_simulator>
+# python main_gpu.py
