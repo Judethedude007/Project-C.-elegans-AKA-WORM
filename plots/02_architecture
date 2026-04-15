@@ -1,0 +1,27 @@
+// Worm Simulator Architecture
+digraph {
+	graph [rankdir=TB]
+	ENV [label="Environment
+(Food, Pheromones, O₂, Temperature)" fillcolor=lightblue]
+	WORM [label="Worm Agents
+(Physics + Neural)" fillcolor=lightcoral]
+	SENSORY [label="Sensory Integration
+(Neural Computation)" fillcolor=plum]
+	MOTOR [label="Motor Output
+(Locomotion)" fillcolor=plum]
+	GENETICS [label="Genetics & Evolution
+(Mutation, Selection)" fillcolor=lightgreen]
+	METRICS [label="Research Metrics
+(MSD, Clustering, Variance)" fillcolor=lightyellow]
+	OUTPUT [label="Visualization & Export
+(UI, CSV, Plots)" fillcolor=lightcyan]
+	ENV -> WORM
+	WORM -> ENV
+	WORM -> SENSORY
+	SENSORY -> MOTOR
+	MOTOR -> WORM
+	WORM -> GENETICS
+	GENETICS -> WORM
+	WORM -> METRICS
+	METRICS -> OUTPUT
+}

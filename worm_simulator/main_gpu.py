@@ -52,6 +52,8 @@ from config import (
 )
 from gpu_renderer import GPURenderer
 from evolution_logger import EvolutionLogger
+from metrics import MovementMetrics, GeneticMetrics, ClusterMetrics, EcosystemMetrics, export_metrics_to_csv
+from ablation_config import ENABLE_PHEROMONE, ENABLE_EVOLUTION, ENABLE_NEURAL_BIAS, ENABLE_CLUSTERING, get_ablation_summary
 
 ZOOM_MIN = 1.0
 ZOOM_MAX = 20.0
@@ -95,6 +97,7 @@ EVOLUTION_SLIDERS = ("mutation",)
 SIMULATION_SLIDERS = ("sim_speed", "season_speed")
 
 pygame.init()
+print(get_ablation_summary())
 display_flags = pygame.DOUBLEBUF | pygame.HWSURFACE
 if USE_OPENGL_WORLD:
     display_flags |= pygame.OPENGL
@@ -344,6 +347,12 @@ openworm_status = "OpenWorm not launched"
 graph_status = "Graph export not started"
 sim_time = 0.0
 next_log_time = 0.0
+
+# --- Initialize metrics for research ---
+movement_metrics = MovementMetrics()
+genetic_metrics = GeneticMetrics()
+cluster_metrics = ClusterMetrics(radius=20)
+ecosystem_metrics = EcosystemMetrics()
 
 mode_buttons = {
     MODE_ECOSYSTEM: UIButton(20, 52, 130, 30, "Ecosystem"),
@@ -809,10 +818,19 @@ while running:
         # Record stats each frame
         stats.record_stats(worms, eggs, sim_time)
 
+        # --- Update research metrics every frame ---
+        movement_metrics.update(worms)
+        genetic_metrics.update(worms)
+        cluster_metrics.update(worms)
+
+
     instant_births = births / max(frame_time, 1e-6)
     instant_deaths = deaths / max(frame_time, 1e-6)
     births_per_sec = births_per_sec * 0.9 + instant_births * 0.1
     deaths_per_sec = deaths_per_sec * 0.9 + instant_deaths * 0.1
+
+    # --- Update ecosystem-level metrics ---
+    ecosystem_metrics.update(worms, eggs, births, deaths, frame_time)
 
     if len(worms) == 0:
         for _ in range(2):
@@ -1328,6 +1346,11 @@ while running:
 if imgui_renderer:
     imgui_renderer.shutdown()
 evolution_logger.close()
+
+# --- Export research metrics ---
+print("\n📊 Exporting research metrics...")
+export_metrics_to_csv(movement_metrics, genetic_metrics, cluster_metrics, ecosystem_metrics)
+
 pygame.quit()
 
 # Plot stats graphs after simulation ends
@@ -1340,3 +1363,5 @@ stats.plot_gene_evolution()
 # python worm_simulator/main.py
 # PS D:\Project worm\worm_simulator>
 # python main_gpu.py
+
+

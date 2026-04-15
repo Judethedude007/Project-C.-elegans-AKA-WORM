@@ -706,6 +706,15 @@ class Worm:
         pheromone_signal = pher_gradient
         pheromone_signal *= self.gene_phero_sense
         pheromone_turn = pheromone_signal * 0.3
+        
+        # --- Ablation: disable pheromone sensing ---
+        try:
+            from ablation_config import ENABLE_PHEROMONE
+            if not ENABLE_PHEROMONE:
+                pheromone_turn = 0.0
+        except ImportError:
+            pass  # Ablation flags not available, use defaults
+        
         pheromone_signal_here = pheromone_here * self.gene_phero_sense
 
         sensory_food_signal = ((food_here + left_food + right_food) / 3.0) / adaptation_scale
