@@ -555,9 +555,8 @@ def spawn_worm_near_food_patch():
 def spawn_worm_near_food():
     spawn_center_x = float(getattr(world, "food_center_x", WORLD_SIZE * 0.5))
     spawn_center_y = float(getattr(world, "food_center_y", WORLD_SIZE * 0.5))
-    def spawn_worm_random():
-        x = random.uniform(0, WORLD_SIZE)
-        y = random.uniform(0, WORLD_SIZE)
+    x = max(0.0, min(WORLD_SIZE, spawn_center_x + random.uniform(-220.0, 220.0)))
+    y = max(0.0, min(WORLD_SIZE, spawn_center_y + random.uniform(-220.0, 220.0)))
     return Worm(x, y, inherited_genes={"generation": 0})
 
 def toggle_fullscreen_state(current_fullscreen):

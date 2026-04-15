@@ -86,11 +86,17 @@ class World:
         edge_factor = np.clip(radial / np.sqrt(2.0), 0.0, 1.0)
         self.edge_oxygen = 0.65 + 0.35 * edge_factor
 
-        for _ in range(6):
-            cx = random.uniform(100.0, WORLD_SIZE - 100.0)
-            cy = random.uniform(100.0, WORLD_SIZE - 100.0)
-            self._add_food_gaussian(cx, cy, 120, 80)
+        # Seed food across the full plate to avoid a single-center ecology.
+        for _ in range(20):
+            cx = random.uniform(80.0, WORLD_SIZE - 80.0)
+            cy = random.uniform(80.0, WORLD_SIZE - 80.0)
+            self._add_food_gaussian(cx, cy, 80, 120)
             self.food_patches.append({"x": cx, "y": cy})
+
+        uniform_seeds = max(2000, GRID_SIZE * GRID_SIZE // 6)
+        xs = np.random.randint(0, GRID_SIZE, size=uniform_seeds)
+        ys = np.random.randint(0, GRID_SIZE, size=uniform_seeds)
+        np.add.at(self.food, (xs, ys), np.random.uniform(0.05, 0.3, size=uniform_seeds))
 
         if self.food_patches:
             self.food_center_x = float(sum(p["x"] for p in self.food_patches) / len(self.food_patches))
@@ -322,6 +328,39 @@ class World:
 
     def get_pheromone(self, x, y):
         return self.sample_pheromone(x, y)
+
+    def find_nearest_food(self, x, y, search_radius_cells=18, min_food=0.05):
+        gx = int((x % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+        gy = int((y % WORLD_SIZE) / WORLD_SIZE * GRID_SIZE)
+        radius = max(1, int(search_radius_cells))
+
+        x0 = max(0, gx - radius)
+        x1 = min(GRID_SIZE, gx + radius + 1)
+        y0 = max(0, gy - radius)
+        y1 = min(GRID_SIZE, gy + radius + 1)
+
+        best_score = -1.0
+        best_cell = None
+        for ix in range(x0, x1):
+            for iy in range(y0, y1):
+                food_value = float(self.food[ix, iy])
+                if food_value < min_food:
+                    continue
+
+                dx = float(ix - gx)
+                dy = float(iy - gy)
+                dist = math.sqrt(dx * dx + dy * dy)
+                score = food_value / (1.0 + dist)
+                if score > best_score:
+                    best_score = score
+                    best_cell = (ix, iy)
+
+        if best_cell is None:
+            return None
+
+        wx = (best_cell[0] + 0.5) * (WORLD_SIZE / GRID_SIZE)
+        wy = (best_cell[1] + 0.5) * (WORLD_SIZE / GRID_SIZE)
+        return (wx, wy)
 
     def set_worm_positions(self, worms):
         self.worm_positions = [(float(w.x), float(w.y)) for w in worms if not getattr(w, "dead", False)]

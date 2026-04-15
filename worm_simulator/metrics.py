@@ -79,11 +79,21 @@ class ClusterMetrics:
             if i in visited:
                 continue
 
-            neighbors = tree.query_ball_point(points[i], self.radius)
-            cluster = set(neighbors)
+            # Connected-component clustering over the radius-neighbor graph.
+            stack = [i]
+            component = set()
+            while stack:
+                idx = stack.pop()
+                if idx in visited:
+                    continue
+                visited.add(idx)
+                component.add(idx)
+                neighbors = tree.query_ball_point(points[idx], self.radius)
+                for n_idx in neighbors:
+                    if n_idx not in visited:
+                        stack.append(n_idx)
 
-            visited |= cluster
-            clusters.append(len(cluster))
+            clusters.append(len(component))
 
         if clusters:
             self.cluster_sizes.append(max(clusters))
@@ -100,6 +110,8 @@ class EcosystemMetrics:
         self.birth_rate_history = []
         self.death_rate_history = []
         self.avg_energy_history = []
+        self.avg_generation_history = []
+        self.lineage_count_history = []
 
     def update(self, worms, eggs, births, deaths, frame_time):
         self.population_history.append(len(worms))
@@ -114,6 +126,15 @@ class EcosystemMetrics:
 
         avg_energy = np.mean([float(w.energy) for w in worms]) if worms else 0.0
         self.avg_energy_history.append(avg_energy)
+
+        if worms:
+            generations = [float(getattr(w, "generation", 0)) for w in worms]
+            lineages = {int(getattr(w, "lineage_id", -1)) for w in worms}
+            self.avg_generation_history.append(float(np.mean(generations)))
+            self.lineage_count_history.append(len(lineages))
+        else:
+            self.avg_generation_history.append(0.0)
+            self.lineage_count_history.append(0)
 
 
 def export_metrics_to_csv(movement_metrics, genetic_metrics, cluster_metrics, ecosystem_metrics, filename="metrics.csv"):
@@ -139,7 +160,9 @@ def export_metrics_to_csv(movement_metrics, genetic_metrics, cluster_metrics, ec
             "population",
             "birth_rate",
             "death_rate",
-            "avg_energy"
+            "avg_energy",
+            "avg_generation",
+            "lineage_count",
         ])
         
         # Data rows
@@ -155,6 +178,8 @@ def export_metrics_to_csv(movement_metrics, genetic_metrics, cluster_metrics, ec
             birth_rate = ecosystem_metrics.birth_rate_history[i] if i < len(ecosystem_metrics.birth_rate_history) else 0.0
             death_rate = ecosystem_metrics.death_rate_history[i] if i < len(ecosystem_metrics.death_rate_history) else 0.0
             avg_energy = ecosystem_metrics.avg_energy_history[i] if i < len(ecosystem_metrics.avg_energy_history) else 0.0
+            avg_generation = ecosystem_metrics.avg_generation_history[i] if i < len(ecosystem_metrics.avg_generation_history) else 0.0
+            lineage_count = ecosystem_metrics.lineage_count_history[i] if i < len(ecosystem_metrics.lineage_count_history) else 0
             
             writer.writerow([
                 i,
@@ -168,7 +193,9 @@ def export_metrics_to_csv(movement_metrics, genetic_metrics, cluster_metrics, ec
                 int(pop),
                 round(birth_rate, 4),
                 round(death_rate, 4),
-                round(avg_energy, 2)
+                round(avg_energy, 2),
+                round(avg_generation, 3),
+                int(lineage_count),
             ])
     
     print(f"✓ Metrics exported to {filename}")

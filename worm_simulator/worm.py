@@ -34,6 +34,11 @@ MALE_COLOR = (80.0 / 255.0, 120.0 / 255.0, 255.0 / 255.0)
 MAX_ENERGY_FOR_STRESS = 200.0
 EGG_CLUSTER_MIN = 2
 EGG_CLUSTER_MAX = 4
+STARVATION_THRESHOLD = 25.0
+STARVATION_ANGLE_GAIN = 0.25
+STARVATION_RANDOM_TURN = 0.6
+EXPLORATION_NOISE = 0.2
+MUTATION_SIGMA = 0.1
 
 
 def lerp(a, b, t):
@@ -64,7 +69,7 @@ class Egg:
     ):
         self.x = x % WORLD_SIZE
         self.y = y % WORLD_SIZE
-        self.hatch_timer = random.uniform(180.0, 140.0)
+        self.hatch_timer = random.uniform(12.0, 20.0)
         self.timer = self.hatch_timer
         self.generation = int(generation)
         if lineage_id is None:
@@ -360,13 +365,22 @@ class Worm:
             self.size = max(self.size, target_size)
 
     def _build_mutated_child_genes(self):
+        evolution_enabled = True
+        try:
+            from ablation_config import ENABLE_EVOLUTION
+            evolution_enabled = bool(ENABLE_EVOLUTION)
+        except ImportError:
+            evolution_enabled = True
+
         child_lineage_id = self.lineage_id
         lineage_mutated = False
-        if random.random() < 0.02:
+        if evolution_enabled and random.random() < 0.02:
             child_lineage_id = random.randint(0, 1000000)
             lineage_mutated = True
 
         mutation_rate = self._adaptive_mutation_rate()
+        if not evolution_enabled:
+            mutation_rate = 0.0
         child_gene_speed = self._mutate_gene(self.gene_speed, 0.6, 1.4, mutation_rate)
         child_gene_food_sense = self._mutate_gene(self.gene_food_sense, 0.6, 1.4, mutation_rate)
         child_gene_phero_sense = self._mutate_gene(self.gene_phero_sense, 0.6, 1.4, mutation_rate)
@@ -408,26 +422,35 @@ class Worm:
             partner_stress = max(0.0, min(1.0, partner_stress))
             stress = 0.5 * (own_stress + partner_stress)
 
-        base_rate = max(0.0, min(0.1, float(getattr(self, "environment_mutation_rate", MUTATION_RATE))))
-        return max(base_rate, min(0.25, base_rate + stress * 0.1))
+        base_rate = max(0.05, min(0.2, float(getattr(self, "environment_mutation_rate", MUTATION_RATE))))
+        return max(base_rate, min(0.35, base_rate + stress * 0.1))
 
     @staticmethod
     def _mutate_gene(value, low, high, mutation_rate):
         mutated = value
         if random.random() < mutation_rate:
-            mutated *= random.uniform(0.9, 1.1)
+            mutated += random.gauss(0.0, MUTATION_SIGMA)
         return max(low, min(high, mutated))
 
     def _build_mated_child_genes(self, mate):
+        evolution_enabled = True
+        try:
+            from ablation_config import ENABLE_EVOLUTION
+            evolution_enabled = bool(ENABLE_EVOLUTION)
+        except ImportError:
+            evolution_enabled = True
+
         child_lineage_id = self.lineage_id
         lineage_mutated = False
         if self.lineage_id != mate.lineage_id:
             child_lineage_id = random.choice([self.lineage_id, mate.lineage_id])
-        if random.random() < 0.05:
+        if evolution_enabled and random.random() < 0.05:
             child_lineage_id = random.randint(0, 1000000)
             lineage_mutated = True
 
         mutation_rate = self._adaptive_mutation_rate(partner=mate)
+        if not evolution_enabled:
+            mutation_rate = 0.0
         child_gene_speed = self._mutate_gene((self.gene_speed + mate.gene_speed) * 0.5, 0.6, 1.4, mutation_rate)
         child_gene_food_sense = self._mutate_gene(
             (self.gene_food_sense + mate.gene_food_sense) * 0.5,
@@ -563,8 +586,8 @@ class Worm:
         egg_count = random.randint(EGG_CLUSTER_MIN, EGG_CLUSTER_MAX)
         for _ in range(egg_count):
             self._spawn_egg(child_genes, inherited_expression, new_worms, new_eggs)
-        self.energy -= 60
-        self.repro_timer = 15.0
+        self.energy -= max(8.0, egg_count * 4.0)
+        self.repro_timer = 6.0
 
     def _find_mate(self, nearby_worms):
         if not nearby_worms:
@@ -613,10 +636,10 @@ class Worm:
                 parent_x=spawn_x,
                 parent_y=spawn_y,
             )
-        self.energy -= 20
-        mate.energy -= 60
-        self.repro_timer = 15.0
-        mate.repro_timer = 15.0
+        self.energy -= max(8.0, egg_count * 3.0)
+        mate.energy -= max(8.0, egg_count * 3.0)
+        self.repro_timer = 6.0
+        mate.repro_timer = 6.0
 
     @staticmethod
     def _lineage_color(lineage_id):
@@ -642,7 +665,7 @@ class Worm:
 
     def update(self, world, dt=1 / 60, new_worms=None, new_eggs=None, nearby_worms=None):
         # --- Energy consumption per step ---
-        self.energy -= 0.05 * dt
+        self.energy -= ENERGY_DECAY * max(dt * 60.0, 0.0)
 
         if self.dead:
             return False
@@ -926,22 +949,26 @@ class Worm:
                 target_speed = 0.0
 
             self.angle += random.uniform(-0.03, 0.03)
-                # --- Starvation wandering behaviour ---
-            if food_here < 0.03:
-                # worms increase roaming when starving
-                target_speed *= 1.6
+            # Starvation response: actively orient toward nearby food, otherwise widen search.
+            if self.energy < STARVATION_THRESHOLD:
+                nearest_food = world.find_nearest_food(self.x, self.y)
+                if nearest_food is not None:
+                    dx = nearest_food[0] - self.x
+                    dy = nearest_food[1] - self.y
+                    dist = max(math.sqrt(dx * dx + dy * dy), 1e-5)
+                    target_angle = math.atan2(dy / dist, dx / dist)
+                    angle_delta = math.atan2(math.sin(target_angle - self.angle), math.cos(target_angle - self.angle))
+                    self.angle += angle_delta * STARVATION_ANGLE_GAIN
+                    target_speed *= 1.25
+                else:
+                    self.angle += random.uniform(-STARVATION_RANDOM_TURN, STARVATION_RANDOM_TURN)
+                    target_speed *= 1.35
 
-                # add more random exploration
-                self.angle += random.uniform(-0.25, 0.25)
-
-                # ignore pheromone trails when starving
                 pheromone_turn *= 0.3
-                
-                
 
         # --- Energy loss from movement (seasonal metabolism) ---
         metabolism = world.season_effects[world.current_season]["metabolism"]
-        self.energy -= target_speed * 0.012 * metabolism  # ← reduced from 0.02 to 0.012
+        self.energy -= target_speed * 0.0012 * metabolism
 
         head_vx, head_vy = self.vel[0]
         head_vx *= GROUND_FRICTION
@@ -949,6 +976,8 @@ class Worm:
 
         target_vx = math.cos(self.angle) * target_speed * self.direction
         target_vy = math.sin(self.angle) * target_speed * self.direction
+        target_vx += random.uniform(-EXPLORATION_NOISE, EXPLORATION_NOISE)
+        target_vy += random.uniform(-EXPLORATION_NOISE, EXPLORATION_NOISE)
         drive_blend = min(1.0, dt * 6.0)
         head_vx += (target_vx - head_vx) * drive_blend
         head_vy += (target_vy - head_vy) * drive_blend
@@ -1125,25 +1154,21 @@ class Worm:
 
 
         # --- Reproduction only if energy and age thresholds are met ---
-        reproduction_threshold = max(500, self.gene_reproduction_energy)
+        reproduction_threshold = max(float(REPRODUCTION_ENERGY), self.gene_reproduction_energy * 0.22)
         maturity_age = 40
         if (not self.dauer) and self.stage == "adult" and self.repro_timer <= 0:
             if self.sex == "hermaphrodite":
                 if self.energy > reproduction_threshold and self.age > maturity_age:
                     self._reproduce_self(new_worms=new_worms, new_eggs=new_eggs)
-                    self.energy *= 0.5
             elif self.sex == "male":
                 if self.energy > 30 and self.age > maturity_age:
                     mate = self._find_mate(nearby_worms)
                     if mate is not None and mate.energy > reproduction_threshold:
                         self._reproduce_mate(mate, new_worms=new_worms, new_eggs=new_eggs)
-                        self.energy *= 0.5
-                        mate.energy *= 0.5
-
-        self.energy = max(0.0, self.energy)
+        self.energy = min(self.energy, 260.0)
 
         # --- Starvation death ---
-        if self.energy < -50:
+        if self.energy <= 0.0:
             self.dead = True
             self.alive = False
             return False
