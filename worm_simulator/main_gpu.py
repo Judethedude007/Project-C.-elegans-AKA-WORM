@@ -52,7 +52,7 @@ from config import (
 )
 from gpu_renderer import GPURenderer
 from evolution_logger import EvolutionLogger
-from metrics import MovementMetrics, GeneticMetrics, ClusterMetrics, EcosystemMetrics, export_metrics_to_csv
+from metrics import MetricsManager
 from ablation_config import ENABLE_PHEROMONE, ENABLE_EVOLUTION, ENABLE_NEURAL_BIAS, ENABLE_CLUSTERING, get_ablation_summary
 
 ZOOM_MIN = 1.0
@@ -349,10 +349,8 @@ sim_time = 0.0
 next_log_time = 0.0
 
 # --- Initialize metrics for research ---
-movement_metrics = MovementMetrics()
-genetic_metrics = GeneticMetrics()
-cluster_metrics = ClusterMetrics(radius=20)
-ecosystem_metrics = EcosystemMetrics()
+metrics_manager = MetricsManager(cluster_radius=20)
+metrics_step = 0
 
 mode_buttons = {
     MODE_ECOSYSTEM: UIButton(20, 52, 130, 30, "Ecosystem"),
@@ -794,7 +792,7 @@ while running:
                 active_eggs.append(egg)
         eggs = active_eggs
 
-        step_births = len(hatched_worms)
+        step_births = len(new_worms) + len(hatched_worms)
         step_deaths = max(0, pre_count - len(worms))
         births += step_births
         deaths += step_deaths
@@ -817,19 +815,21 @@ while running:
         # Record stats each frame
         stats.record_stats(worms, eggs, sim_time)
 
-        # --- Update research metrics every frame ---
-        movement_metrics.update(worms)
-        genetic_metrics.update(worms)
-        cluster_metrics.update(worms)
+        # --- Update research metrics every simulation step ---
+        metrics_manager.update(
+            step=metrics_step,
+            worms=worms,
+            births_this_step=step_births,
+            deaths_this_step=step_deaths,
+            dt=FIXED_DT,
+        )
+        metrics_step += 1
 
 
     instant_births = births / max(frame_time, 1e-6)
     instant_deaths = deaths / max(frame_time, 1e-6)
     births_per_sec = births_per_sec * 0.9 + instant_births * 0.1
     deaths_per_sec = deaths_per_sec * 0.9 + instant_deaths * 0.1
-
-    # --- Update ecosystem-level metrics ---
-    ecosystem_metrics.update(worms, eggs, births, deaths, frame_time)
 
     if len(worms) == 0:
         for _ in range(2):
@@ -1348,7 +1348,7 @@ evolution_logger.close()
 
 # --- Export research metrics ---
 print("\n📊 Exporting research metrics...")
-export_metrics_to_csv(movement_metrics, genetic_metrics, cluster_metrics, ecosystem_metrics)
+metrics_manager.save_csv("metrics.csv")
 
 pygame.quit()
 
